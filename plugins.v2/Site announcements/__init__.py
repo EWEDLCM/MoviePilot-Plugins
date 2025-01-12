@@ -10,7 +10,7 @@ from typing import Dict, List
 class MessageSender(_PluginBase):
     plugin_name = "站点喊话"
     plugin_desc = "向指定的服务发送预设或自定义的消息。"
-    plugin_icon = "https://cyanbug.net/bitbucket/20230121224746611154251a2804ee213dbfe1189dbab0.png"
+    plugin_icon = "https://ts4.cn.mm.bing.net/th?id=OIP-C.PqmdypeiQAAyeuMIHeJeXAHaHV&rs=1&pid=ImgDetMain"
     plugin_version = "1.0"
     plugin_author = "YourName"
     author_url = "https://github.com/EWEDLCM"
