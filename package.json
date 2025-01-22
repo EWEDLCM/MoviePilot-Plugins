@@ -1,9 +1,9 @@
 {
-  "MsgNotify": {
-    "name": "站点喊话",
-    "description": "进入站点喊话。",
-    "labels": "消息通知",
-    "version": "1.2",
+  "Qbittorrent_monitor": {
+    "name": "QB下载器检测",
+    "description": "qbcheck",
+    "labels": "qbcheck",
+    "version": "1.1",
     "icon": "https://ts4.cn.mm.bing.net/th?id=OIP-C.PqmdypeiQAAyeuMIHeJeXAHaHV&rs=1&pid=ImgDetMain",
     "author": "EWEDLCM",
     "level": 1,
@@ -12,3 +12,4 @@
       "v1.0": "test"
     }
   }
+}
