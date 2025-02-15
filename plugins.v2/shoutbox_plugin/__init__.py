@@ -3,6 +3,7 @@ from app.plugins import _PluginBase
 from app.log import logger
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from django.conf import settings
 
 class ShoutBoxPlugin(_PluginBase):
     # 插件名称
@@ -32,21 +33,36 @@ class ShoutBoxPlugin(_PluginBase):
     _scheduler: BackgroundScheduler = None
 
     def init_plugin(self, config: dict = None):
-        if config:
-            self._enabled = config.get("enabled")
-            self._site_url = config.get("site_url")
-            self._cookie = config.get("cookie")
-            self._message = config.get("message")
+        """
+        插件初始化
+        """
+        try:
+            if config:
+                self._enabled = config.get("enabled")
+                self._site_url = config.get("site_url")
+                self._cookie = config.get("cookie")
+                self._message = config.get("message")
 
-            logger.info("插件初始化配置: %s", config)
+                logger.info("插件初始化配置: %s", config)
 
-            if self._enabled:
-                logger.info("插件已启用，站点URL: %s", self._site_url)
-                self._scheduler = BackgroundScheduler()
-                self._scheduler.add_job(self.send_message, CronTrigger.from_crontab('0 * * * *'))  # 每小时执行一次
-                self._scheduler.start()
-            else:
-                logger.warning("插件未启用")
+                # 停止现有任务
+                self.stop_service()
+
+                if self._enabled:
+                    logger.info("插件已启用，站点URL: %s", self._site_url)
+                    # 创建定时任务
+                    self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+                    self._scheduler.add_job(self.send_message, 
+                                          CronTrigger.from_crontab('0 * * * *'),  # 每小时执行一次
+                                          name="站点喊话")
+                    # 启动任务
+                    if self._scheduler.get_jobs():
+                        self._scheduler.start()
+                        logger.info("站点喊话服务启动")
+                else:
+                    logger.warning("插件未启用")
+        except Exception as e:
+            logger.error("插件初始化失败: %s", str(e))
 
     def get_state(self) -> bool:
         return self._enabled
@@ -156,7 +172,15 @@ class ShoutBoxPlugin(_PluginBase):
         # 发送请求的代码可以在这里实现
 
     def stop_service(self):
-        """退出插件"""
-        if self._scheduler:
-            self._scheduler.shutdown()
-        logger.info("插件已停止") 
+        """
+        退出插件
+        """
+        try:
+            if self._scheduler:
+                self._scheduler.remove_all_jobs()
+                if self._scheduler.running:
+                    self._scheduler.shutdown()
+                self._scheduler = None
+                logger.info("站点喊话服务已停止")
+        except Exception as e:
+            logger.error("退出插件失败: %s", str(e)) 
