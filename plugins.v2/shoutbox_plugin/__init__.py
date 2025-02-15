@@ -10,11 +10,11 @@ class ShoutBoxPlugin(_PluginBase):
     # 插件名称
     plugin_name = "喊话功能"
     # 插件描述
-    plugin_desc = "在指定站点进行喊话"
+    plugin_desc = "在多个指定站点进行定时喊话"
     # 插件图标
     plugin_icon = "shoutbox.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -28,40 +28,47 @@ class ShoutBoxPlugin(_PluginBase):
 
     # 私有属性
     _enabled = False
-    _site_url = ""
-    _cookie = ""
-    _message = ""
     _scheduler: BackgroundScheduler = None
+    _sites = []
 
     def init_plugin(self, config: dict = None):
-        """
-        插件初始化
-        """
+        # 停止现有任务
+        self.stop_service()
+
         if config:
             self._enabled = config.get("enabled")
-            self._site_url = config.get("site_url")
-            self._cookie = config.get("cookie")
-            self._message = config.get("message")
+            self._sites = config.get("sites") or []
 
-            # 停止现有任务
-            self.stop_service()
-
-            if self._enabled:
-                logger.info(f"站点喊话服务启动，站点：{self._site_url}")
-                self._scheduler = BackgroundScheduler()
-                self._scheduler.add_job(self.send_message, 
-                                      CronTrigger.from_crontab('0 * * * *'),
-                                      name="站点喊话",
-                                      next_run_time=datetime.now(tz=pytz.UTC) + timedelta(seconds=3))
-                self._scheduler.start()
+            if self._enabled and self._sites:
+                # 初始化定时任务
+                self._scheduler = BackgroundScheduler(timezone=pytz.UTC)
+                for site in self._sites:
+                    if not all(site.values()):
+                        continue
+                    self._scheduler.add_job(
+                        func=self.send_message,
+                        trigger=CronTrigger.from_crontab('0 * * * *'),  # 每小时执行
+                        args=[site],
+                        name=f"站点喊话：{site.get('site_url')}"
+                    )
+                # 立即运行一次测试
+                self._scheduler.add_job(
+                    func=self.send_message,
+                    trigger='date',
+                    args=[self._sites[0]] if self._sites else [],
+                    run_date=datetime.now(pytz.UTC) + timedelta(seconds=3),
+                    name="测试喊话"
+                )
+                try:
+                    self._scheduler.start()
+                    logger.info("喊话服务启动成功")
+                except Exception as e:
+                    logger.error(f"定时任务启动失败: {e}")
 
     def get_state(self) -> bool:
         return self._enabled
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """
-        拼装插件配置页面
-        """
         return [
             {
                 'component': 'VForm',
@@ -71,68 +78,104 @@ class ShoutBoxPlugin(_PluginBase):
                         'content': [
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
+                                'props': {'cols': 12, 'md': 6},
                                 'content': [
                                     {
                                         'component': 'VSwitch',
                                         'props': {
                                             'model': 'enabled',
-                                            'label': '启用插件'
+                                            'label': '启用插件',
                                         }
                                     }
                                 ]
-                            },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
+                                'props': {'cols': 12},
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VArray',
                                         'props': {
-                                            'model': 'site_url',
-                                            'label': '站点URL',
-                                            'placeholder': '输入要喊话的站点URL'
+                                            'model': 'sites',
+                                            'label': '站点配置',
+                                            'item_default': {
+                                                'site_url': '',
+                                                'cookie': '',
+                                                'message': ''
+                                            },
+                                            'items': [
+                                                {
+                                                    'component': 'VRow',
+                                                    'content': [
+                                                        {
+                                                            'component': 'VCol',
+                                                            'props': {'cols': 12, 'md': 4},
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VTextField',
+                                                                    'props': {
+                                                                        'model': 'item.site_url',
+                                                                        'label': '站点URL',
+                                                                        'placeholder': 'https://example.com'
+                                                                    }
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'VCol',
+                                                            'props': {'cols': 12, 'md': 4},
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VTextField',
+                                                                    'props': {
+                                                                        'model': 'item.cookie',
+                                                                        'label': 'Cookie',
+                                                                        'placeholder': '输入站点Cookie'
+                                                                    }
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            'component': 'VCol',
+                                                            'props': {'cols': 12, 'md': 4},
+                                                            'content': [
+                                                                {
+                                                                    'component': 'VTextField',
+                                                                    'props': {
+                                                                        'model': 'item.message',
+                                                                        'label': '喊话内容',
+                                                                        'placeholder': '输入喊话消息'
+                                                                    }
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            ]
                                         }
                                     }
                                 ]
-                            },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
+                                'props': {'cols': 12},
                                 'content': [
                                     {
-                                        'component': 'VTextField',
+                                        'component': 'VAlert',
                                         'props': {
-                                            'model': 'cookie',
-                                            'label': 'Cookie',
-                                            'placeholder': '输入站点的Cookie'
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                    'md': 6
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VTextarea',
-                                        'props': {
-                                            'model': 'message',
-                                            'label': '喊话内容',
-                                            'placeholder': '输入要发送的消息',
-                                            'rows': 4
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '每小时整点自动执行喊话，请确保Cookie有效性'
                                         }
                                     }
                                 ]
@@ -143,30 +186,46 @@ class ShoutBoxPlugin(_PluginBase):
             }
         ], {
             "enabled": False,
-            "site_url": "",
-            "cookie": "",
-            "message": ""
+            "sites": []
         }
 
-    def send_message(self):
+    def send_message(self, site: dict):
         """发送消息到指定站点"""
-        if not self.get_state():
-            return
-        if not self._site_url or not self._message:
-            return
-        logger.info(f"向 {self._site_url} 发送消息: {self._message}")
-
-    def get_api(self) -> List[Dict[str, Any]]:
-        pass
-
-    def get_page(self) -> List[dict]:
-        pass
-
-    def get_command(self) -> List[Dict[str, Any]]:
-        pass
+        try:
+            if not self._enabled:
+                return
+            
+            site_url = site.get('site_url')
+            cookie = site.get('cookie')
+            message = site.get('message')
+            
+            logger.info(f"正在向 {site_url} 发送喊话: {message}")
+            # 这里添加实际发送逻辑
+            # 示例：使用requests发送POST请求
+            # import requests
+            # headers = {'Cookie': cookie}
+            # data = {'message': message}
+            # response = requests.post(f"{site_url}/shoutbox", headers=headers, data=data)
+            # if response.status_code == 200:
+            #     logger.success(f"喊话成功: {site_url}")
+            # else:
+            #     logger.error(f"喊话失败: {response.text}")
+            
+        except Exception as e:
+            logger.error(f"喊话过程中发生错误: {str(e)}")
 
     def stop_service(self):
-        """退出插件"""
-        if self._scheduler:
-            self._scheduler.shutdown()
-            self._scheduler = None 
+        """停止服务"""
+        try:
+            if self._scheduler:
+                self._scheduler.remove_all_jobs()
+                if self._scheduler.running:
+                    self._scheduler.shutdown()
+                self._scheduler = None
+        except Exception as e:
+            logger.error(f"停止服务失败: {e}")
+
+    # 以下方法保持空实现即可
+    def get_api(self) -> List[Dict[str, Any]]: pass
+    def get_page(self) -> List[dict]: pass
+    def get_command(self) -> List[Dict[str, Any]]: pass
