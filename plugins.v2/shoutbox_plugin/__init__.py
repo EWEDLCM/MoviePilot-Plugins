@@ -1,6 +1,8 @@
 from typing import Any, List, Dict, Tuple
 from app.plugins import _PluginBase
 from app.log import logger
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 class ShoutBoxPlugin(_PluginBase):
     # 插件名称
@@ -12,9 +14,9 @@ class ShoutBoxPlugin(_PluginBase):
     # 插件版本
     plugin_version = "1.0"
     # 插件作者
-    plugin_author = "YourName"
+    plugin_author = "EWEDL"
     # 作者主页
-    author_url = "https://github.com/YourGitHub"
+    author_url = "https://github.com/EWEDL"
     # 插件配置项ID前缀
     plugin_config_prefix = "shoutbox_plugin_"
     # 加载顺序
@@ -27,6 +29,7 @@ class ShoutBoxPlugin(_PluginBase):
     _site_url = ""
     _cookie = ""
     _message = ""
+    _scheduler: BackgroundScheduler = None
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -39,6 +42,9 @@ class ShoutBoxPlugin(_PluginBase):
 
             if self._enabled:
                 logger.info("插件已启用，站点URL: %s", self._site_url)
+                self._scheduler = BackgroundScheduler()
+                self._scheduler.add_job(self.send_message, CronTrigger.from_crontab('0 * * * *'))  # 每小时执行一次
+                self._scheduler.start()
             else:
                 logger.warning("插件未启用")
 
@@ -71,12 +77,7 @@ class ShoutBoxPlugin(_PluginBase):
                                         }
                                     }
                                 ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
+                            },
                             {
                                 'component': 'VCol',
                                 'props': {
@@ -156,4 +157,6 @@ class ShoutBoxPlugin(_PluginBase):
 
     def stop_service(self):
         """退出插件"""
+        if self._scheduler:
+            self._scheduler.shutdown()
         logger.info("插件已停止") 
