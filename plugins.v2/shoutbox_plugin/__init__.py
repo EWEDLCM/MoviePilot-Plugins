@@ -33,16 +33,24 @@ class ShoutBoxPlugin(_PluginBase):
     _scheduler: BackgroundScheduler = None
 
     def init_plugin(self, config: dict = None):
-        if config:
-            self._enabled = config.get("enabled")
-            self._site_url = config.get("site_url")
-            self._message = config.get("message")
-            self._cron = config.get("cron")
+        try:
+            if config:
+                self._enabled = config.get("enabled")
+                self._site_url = config.get("site_url")
+                self._message = config.get("message")
+                self._cron = config.get("cron")
 
-            if self._enabled and self._cron:
-                self._scheduler = BackgroundScheduler()
-                self._scheduler.add_job(self.send_message, CronTrigger.from_crontab(self._cron))
-                self._scheduler.start()
+                logger.info("插件初始化配置: %s", config)
+
+                if self._enabled and self._cron:
+                    self._scheduler = BackgroundScheduler()
+                    self._scheduler.add_job(self.send_message, CronTrigger.from_crontab(self._cron))
+                    self._scheduler.start()
+                    logger.info("插件已启动，执行周期: %s", self._cron)
+                else:
+                    logger.warning("插件未启用或未设置执行周期")
+        except Exception as e:
+            logger.error("插件初始化失败: %s", str(e))
 
     def get_state(self) -> bool:
         return self._enabled
