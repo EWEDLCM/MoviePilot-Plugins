@@ -5,6 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from datetime import datetime, timedelta
+from threading import Event
 
 class ShoutBoxPlugin(_PluginBase):
     # 插件名称
@@ -32,12 +33,17 @@ class ShoutBoxPlugin(_PluginBase):
     _cookie = ""
     _message = ""
     _scheduler: BackgroundScheduler = None
+    # 退出事件
+    _event = Event()
 
     def init_plugin(self, config: dict = None):
         """
         插件初始化
         """
         try:
+            # 停止现有任务
+            self.stop_service()
+            
             if config:
                 self._enabled = config.get("enabled")
                 self._site_url = config.get("site_url")
@@ -45,9 +51,6 @@ class ShoutBoxPlugin(_PluginBase):
                 self._message = config.get("message")
 
                 logger.info("插件初始化配置: %s", config)
-
-                # 停止现有任务
-                self.stop_service()
 
                 if self._enabled:
                     logger.info("插件已启用，站点URL: %s", self._site_url)
@@ -181,7 +184,9 @@ class ShoutBoxPlugin(_PluginBase):
             if self._scheduler:
                 self._scheduler.remove_all_jobs()
                 if self._scheduler.running:
+                    self._event.set()
                     self._scheduler.shutdown()
+                    self._event.clear()
                 self._scheduler = None
                 logger.info("站点喊话服务已停止")
         except Exception as e:
