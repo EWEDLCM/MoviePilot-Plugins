@@ -28,8 +28,8 @@ class ShoutBoxPlugin(_PluginBase):
 
     # 私有属性
     _enabled = False
-    _scheduler: BackgroundScheduler = None
     _sites = []
+    _scheduler: BackgroundScheduler = None
 
     def init_plugin(self, config: dict = None):
         """
