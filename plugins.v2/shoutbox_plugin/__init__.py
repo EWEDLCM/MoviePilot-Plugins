@@ -1,9 +1,9 @@
 from typing import Any, List, Dict, Tuple
 from app.plugins import _PluginBase
 from app.log import logger
+from app.core.config import settings
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from django.conf import settings
 
 class ShoutBoxPlugin(_PluginBase):
     # 插件名称
@@ -13,7 +13,7 @@ class ShoutBoxPlugin(_PluginBase):
     # 插件图标
     plugin_icon = "shoutbox.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -50,7 +50,7 @@ class ShoutBoxPlugin(_PluginBase):
 
                 if self._enabled:
                     logger.info("插件已启用，站点URL: %s", self._site_url)
-                    # 创建定时任务
+                    # 创建定时任务，使用项目自己的时区设置
                     self._scheduler = BackgroundScheduler(timezone=settings.TZ)
                     self._scheduler.add_job(self.send_message, 
                                           CronTrigger.from_crontab('0 * * * *'),  # 每小时执行一次
