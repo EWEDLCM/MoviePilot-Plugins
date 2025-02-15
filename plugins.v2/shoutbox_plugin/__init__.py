@@ -5,9 +5,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 from datetime import datetime, timedelta
-from threading import Event
-from app.schemas.types import EventType
-from app.eventmanager import eventmanager
 
 class ShoutBoxPlugin(_PluginBase):
     # 插件名称
@@ -35,48 +32,35 @@ class ShoutBoxPlugin(_PluginBase):
     _cookie = ""
     _message = ""
     _scheduler: BackgroundScheduler = None
-    # 退出事件
-    _event = Event()
 
     def init_plugin(self, config: dict = None):
         """
         插件初始化
         """
-        try:
+        if config:
+            self._enabled = config.get("enabled")
+            self._site_url = config.get("site_url")
+            self._cookie = config.get("cookie")
+            self._message = config.get("message")
+
             # 停止现有任务
             self.stop_service()
-            
-            if config:
-                self._enabled = config.get("enabled")
-                self._site_url = config.get("site_url")
-                self._cookie = config.get("cookie")
-                self._message = config.get("message")
 
-                logger.info("插件初始化配置: %s", config)
-
-                if self._enabled:
-                    logger.info("插件已启用，站点URL: %s", self._site_url)
-                    # 创建定时任务
-                    self._scheduler = BackgroundScheduler()
-                    self._scheduler.add_job(self.send_message,
-                                          CronTrigger.from_crontab('0 * * * *'),  # 每小时执行一次
-                                          name="站点喊话",
-                                          next_run_time=datetime.now(tz=pytz.UTC) + timedelta(seconds=3))
-                    # 启动任务
-                    if self._scheduler.get_jobs():
-                        self._scheduler.start()
-                        logger.info("站点喊话服务启动")
-                else:
-                    logger.warning("插件未启用")
-        except Exception as e:
-            logger.error("插件初始化失败: %s", str(e))
+            if self._enabled:
+                logger.info(f"站点喊话服务启动，站点：{self._site_url}")
+                self._scheduler = BackgroundScheduler()
+                self._scheduler.add_job(self.send_message, 
+                                      CronTrigger.from_crontab('0 * * * *'),
+                                      name="站点喊话",
+                                      next_run_time=datetime.now(tz=pytz.UTC) + timedelta(seconds=3))
+                self._scheduler.start()
 
     def get_state(self) -> bool:
         return self._enabled
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
-        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
+        拼装插件配置页面
         """
         return [
             {
@@ -167,60 +151,22 @@ class ShoutBoxPlugin(_PluginBase):
     def send_message(self):
         """发送消息到指定站点"""
         if not self.get_state():
-            logger.warning("插件未启用")
             return
-
         if not self._site_url or not self._message:
-            logger.warning("站点URL或消息内容未设置")
             return
-
-        # 这里实现发送消息的逻辑
-        logger.info(f"向 {self._site_url} 发送消息: {self._message}，使用Cookie: {self._cookie}")
-        # 发送请求的代码可以在这里实现
-
-    def stop_service(self):
-        """
-        退出插件
-        """
-        try:
-            if self._scheduler:
-                self._scheduler.remove_all_jobs()
-                if self._scheduler.running:
-                    self._event.set()
-                    self._scheduler.shutdown()
-                    self._event.clear()
-                self._scheduler = None
-                logger.info("站点喊话服务已停止")
-        except Exception as e:
-            logger.error("退出插件失败: %s", str(e))
+        logger.info(f"向 {self._site_url} 发送消息: {self._message}")
 
     def get_api(self) -> List[Dict[str, Any]]:
-        """获取插件API"""
-        return []
+        pass
 
     def get_page(self) -> List[dict]:
-        """获取插件页面"""
-        return []
+        pass
 
     def get_command(self) -> List[Dict[str, Any]]:
-        """获取插件命令"""
-        return []
+        pass
 
-    @eventmanager.register(EventType.PluginAction)
-    def send_shoutbox_message(self, event: Event = None):
-        """
-        响应插件命令
-        """
-        if not event:
-            return
-        
-        event_data = event.event_data
-        if not event_data or event_data.get("action") != "send_shoutbox":
-            return
-
-        self.send_message()
-        self.post_message(
-            channel=event_data.get("channel"),
-            title="喊话发送完成",
-            userid=event_data.get("user")
-        ) 
+    def stop_service(self):
+        """退出插件"""
+        if self._scheduler:
+            self._scheduler.shutdown()
+            self._scheduler = None 
