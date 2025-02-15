@@ -14,7 +14,7 @@ class ShoutBoxPlugin(_PluginBase):
     # 插件图标
     plugin_icon = "shoutbox.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.2"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -32,43 +32,45 @@ class ShoutBoxPlugin(_PluginBase):
     _sites = []
 
     def init_plugin(self, config: dict = None):
+        """
+        插件初始化
+        """
         # 停止现有任务
         self.stop_service()
 
         if config:
-            self._enabled = config.get("enabled")
-            self._sites = config.get("sites") or []
+            self._enabled = config.get("enabled", False)
+            self._sites = config.get("sites", [])
 
-            if self._enabled and self._sites:
-                # 初始化定时任务
+        if self._enabled and self._sites:
+            try:
+                # 初始化调度器
                 self._scheduler = BackgroundScheduler(timezone=pytz.UTC)
-                for site in self._sites:
-                    if not all(site.values()):
-                        continue
-                    self._scheduler.add_job(
-                        func=self.send_message,
-                        trigger=CronTrigger.from_crontab('0 * * * *'),  # 每小时执行
-                        args=[site],
-                        name=f"站点喊话：{site.get('site_url')}"
-                    )
+                self._scheduler.add_job(
+                    func=self.send_messages_to_all_sites,
+                    trigger=CronTrigger.from_crontab('0 * * * *'),  # 每小时执行一次
+                    name="定时喊话任务"
+                )
                 # 立即运行一次测试
                 self._scheduler.add_job(
-                    func=self.send_message,
+                    func=self.send_messages_to_all_sites,
                     trigger='date',
-                    args=[self._sites[0]] if self._sites else [],
                     run_date=datetime.now(pytz.UTC) + timedelta(seconds=3),
-                    name="测试喊话"
+                    name="测试喊话任务"
                 )
-                try:
-                    self._scheduler.start()
-                    logger.info("喊话服务启动成功")
-                except Exception as e:
-                    logger.error(f"定时任务启动失败: {e}")
+                self._scheduler.start()
+                logger.info("喊话服务启动成功")
+            except Exception as e:
+                logger.error(f"定时任务启动失败: {e}")
+                self.stop_service()
 
     def get_state(self) -> bool:
         return self._enabled
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
+        """
+        拼装插件配置页面
+        """
         return [
             {
                 'component': 'VForm',
@@ -189,39 +191,48 @@ class ShoutBoxPlugin(_PluginBase):
             "sites": []
         }
 
-    def send_message(self, site: dict):
-        """发送消息到指定站点"""
-        try:
-            if not self._enabled:
-                return
-            
-            site_url = site.get('site_url')
-            cookie = site.get('cookie')
-            message = site.get('message')
-            
-            logger.info(f"正在向 {site_url} 发送喊话: {message}")
-            # 这里添加实际发送逻辑
-            # 示例：使用requests发送POST请求
-            # import requests
-            # headers = {'Cookie': cookie}
-            # data = {'message': message}
-            # response = requests.post(f"{site_url}/shoutbox", headers=headers, data=data)
-            # if response.status_code == 200:
-            #     logger.success(f"喊话成功: {site_url}")
-            # else:
-            #     logger.error(f"喊话失败: {response.text}")
-            
-        except Exception as e:
-            logger.error(f"喊话过程中发生错误: {str(e)}")
+    def send_messages_to_all_sites(self):
+        """
+        向所有配置的站点发送消息
+        """
+        if not self._enabled or not self._sites:
+            logger.info("插件未启用或无站点配置，跳过喊话")
+            return
+
+        for site in self._sites:
+            try:
+                site_url = site.get('site_url')
+                cookie = site.get('cookie')
+                message = site.get('message')
+
+                if not all([site_url, cookie, message]):
+                    logger.warning(f"站点配置不完整，跳过: {site}")
+                    continue
+
+                logger.info(f"正在向 {site_url} 发送喊话: {message}")
+                # 示例：使用requests发送POST请求
+                # import requests
+                # headers = {'Cookie': cookie}
+                # data = {'message': message}
+                # response = requests.post(f"{site_url}/shoutbox", headers=headers, data=data)
+                # if response.status_code == 200:
+                #     logger.success(f"喊话成功: {site_url}")
+                # else:
+                #     logger.error(f"喊话失败: {response.text}")
+            except Exception as e:
+                logger.error(f"向 {site.get('site_url')} 喊话失败: {str(e)}")
 
     def stop_service(self):
-        """停止服务"""
+        """
+        停止服务
+        """
         try:
             if self._scheduler:
                 self._scheduler.remove_all_jobs()
                 if self._scheduler.running:
                     self._scheduler.shutdown()
                 self._scheduler = None
+                logger.info("喊话服务已停止")
         except Exception as e:
             logger.error(f"停止服务失败: {e}")
 
