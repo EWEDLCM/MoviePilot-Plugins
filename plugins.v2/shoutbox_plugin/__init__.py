@@ -6,6 +6,8 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 from datetime import datetime, timedelta
 from threading import Event
+from app.schemas.types import EventType
+from app.eventmanager import eventmanager
 
 class ShoutBoxPlugin(_PluginBase):
     # 插件名称
@@ -190,4 +192,35 @@ class ShoutBoxPlugin(_PluginBase):
                 self._scheduler = None
                 logger.info("站点喊话服务已停止")
         except Exception as e:
-            logger.error("退出插件失败: %s", str(e)) 
+            logger.error("退出插件失败: %s", str(e))
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        """获取插件API"""
+        return []
+
+    def get_page(self) -> List[dict]:
+        """获取插件页面"""
+        return []
+
+    def get_command(self) -> List[Dict[str, Any]]:
+        """获取插件命令"""
+        return []
+
+    @eventmanager.register(EventType.PluginAction)
+    def send_shoutbox_message(self, event: Event = None):
+        """
+        响应插件命令
+        """
+        if not event:
+            return
+        
+        event_data = event.event_data
+        if not event_data or event_data.get("action") != "send_shoutbox":
+            return
+
+        self.send_message()
+        self.post_message(
+            channel=event_data.get("channel"),
+            title="喊话发送完成",
+            userid=event_data.get("user")
+        ) 
