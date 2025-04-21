@@ -13,5 +13,18 @@
       "v1.1.0": "添加通知渠道选择功能，用户可自定义通知类型",
       "v1.1.1": "修复通知渠道选择错误，优化排版，增加配置说明"
     }
+  },
+  "proxytest": {
+    "name": "代理地址测试",
+    "description": "测试容器内的HTTP代理设置，并尝试使用代理连接外网",
+    "labels": "代理,测试,网络",
+    "version": "1.0.0",
+    "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/proxytest.png",
+    "author": "EWEDL",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.0.0": "仅用于支持测试容器代理设置并使用代理访问外网"
+    }
   }
 } 
