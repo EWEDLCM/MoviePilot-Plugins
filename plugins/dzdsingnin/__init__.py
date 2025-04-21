@@ -1,6 +1,6 @@
 """
 站点签到（多站点版）插件
-版本: 1.0.0
+版本: 1.1.0
 作者: EWEDL
 功能:
 - 支持多个站点同时签到
@@ -8,7 +8,7 @@
 - 支持GET和POST两种签到请求方式
 - 自定义成功关键词检测
 - 可配置签到时间和频率
-- 签到结果通知
+- 签到结果通知（支持自定义通知渠道）
 - 签到历史记录查看
 """
 import time
@@ -42,7 +42,7 @@ class dzdsingnin(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/dzdsingnin.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.1.0"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -64,6 +64,8 @@ class dzdsingnin(_PluginBase):
     _success_keywords_str = DEFAULT_SUCCESS_KEYWORDS_STR  # 存储用户输入的关键词字符串
     # 全局签到检查关键词
     _success_keywords = DEFAULT_SUCCESS_KEYWORDS.copy()
+    # 通知渠道
+    _msgtype = None
     # 定时器
     _scheduler: Optional[BackgroundScheduler] = None
 
@@ -77,6 +79,7 @@ class dzdsingnin(_PluginBase):
                 self._enabled = config.get("enabled")
                 self._site_configs = config.get("site_configs", "")
                 self._notify = config.get("notify")
+                self._msgtype = config.get("msgtype")
                 self._cron = config.get("cron")
                 self._onlyonce = config.get("onlyonce")
                 self._history_days = int(config.get("history_days", DEFAULT_HISTORY_DAYS))
@@ -85,7 +88,7 @@ class dzdsingnin(_PluginBase):
                 # 解析成功关键词
                 self._parse_success_keywords()
                 
-                logger.info(f"配置: enabled={self._enabled}, notify={self._notify}, cron={self._cron}, history_days={self._history_days}")
+                logger.info(f"配置: enabled={self._enabled}, notify={self._notify}, msgtype={self._msgtype}, cron={self._cron}, history_days={self._history_days}")
                 logger.info(f"成功关键词: {', '.join(self._success_keywords)}")
                 
                 # 解析站点配置
@@ -104,6 +107,7 @@ class dzdsingnin(_PluginBase):
                     "enabled": self._enabled,
                     "site_configs": self._site_configs,
                     "notify": self._notify,
+                    "msgtype": self._msgtype,
                     "cron": self._cron,
                     "history_days": self._history_days,
                     "success_keywords": self._success_keywords_str
@@ -329,9 +333,18 @@ class dzdsingnin(_PluginBase):
             
             text += f"━━━━━━━━━━"
             
+            # 根据配置选择通知类型
+            mtype = NotificationType.SiteMessage
+            if self._msgtype:
+                try:
+                    mtype = NotificationType.__getitem__(str(self._msgtype)) or NotificationType.SiteMessage
+                    logger.info(f"使用自定义通知类型: {mtype}")
+                except Exception as e:
+                    logger.error(f"通知类型转换错误: {str(e)}，使用默认通知类型")
+            
             # 发送通知
             self.post_message(
-                mtype=NotificationType.SiteMessage,
+                mtype=mtype,
                 title=title,
                 text=text
             )
@@ -356,6 +369,14 @@ class dzdsingnin(_PluginBase):
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """获取表单配置"""
+        # 编历 NotificationType 枚举，生成消息类型选项
+        MsgTypeOptions = []
+        for item in NotificationType:
+            MsgTypeOptions.append({
+                "title": item.value,
+                "value": item.name
+            })
+        
         return [
             {
                 'component': 'VForm',
@@ -426,7 +447,7 @@ class dzdsingnin(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -445,7 +466,7 @@ class dzdsingnin(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 6
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -457,6 +478,25 @@ class dzdsingnin(_PluginBase):
                                             'hint': '签到历史记录的保留天数',
                                             'persistent-hint': True,
                                             'type': 'number'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSelect',
+                                        'props': {
+                                            'model': 'msgtype',
+                                            'label': '通知渠道',
+                                            'items': MsgTypeOptions,
+                                            'hint': '选择签到结果通知渠道',
+                                            'persistent-hint': True
                                         }
                                     }
                                 ]
@@ -519,7 +559,8 @@ class dzdsingnin(_PluginBase):
             "cron": self._cron or DEFAULT_CRON,
             "site_configs": self._site_configs,
             "history_days": self._history_days,
-            "success_keywords": self._success_keywords_str
+            "success_keywords": self._success_keywords_str,
+            "msgtype": self._msgtype or "SiteMessage"
         }
 
     def get_page(self) -> List[dict]:

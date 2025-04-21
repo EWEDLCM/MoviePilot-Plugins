@@ -3,13 +3,14 @@
     "name": "站点签到（多站点版）",
     "description": "支持多个站点的自动签到功能，用户可自定义签到站点配置",
     "labels": "签到,站点,自动化",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/dzdsingnin.png",
     "author": "EWEDL",
     "level": 2,
     "v2": true,
     "history": {
-      "v1.0.0": "首次发布，支持多站点签到，用户自定义配置"
+      "v1.0.0": "首次发布，支持多站点签到，用户自定义配置",
+      "v1.1.0": "添加通知渠道选择功能，用户可自定义通知类型"
     }
   }
 } 
