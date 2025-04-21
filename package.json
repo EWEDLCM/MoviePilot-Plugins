@@ -11,27 +11,5 @@
     "history": {
       "v1.0.0": "首次发布，支持多站点签到，用户自定义配置"
     }
-  },
-  "name": "MoviePilot-Plugins",
-  "version": "1.0.0",
-  "description": "MoviePilot 第三方插件仓库",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/EWEDLCM/MoviePilot-Plugins.git"
-  },
-  "keywords": [
-    "MoviePilot",
-    "Plugin",
-    "Movie"
-  ],
-  "author": "EWEDL",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/EWEDLCM/MoviePilot-Plugins/issues"
-  },
-  "homepage": "https://github.com/EWEDLCM/MoviePilot-Plugins#readme"
+  }
 } 
