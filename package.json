@@ -24,8 +24,7 @@
     "level": 2,
     "v2": true,
     "history": {
-      "v1.5.0": "优化插件获取方法，只保留通过PluginManager获取插件的方式，在插件列表中排除插件自身(proxycontroller)避免自我代理
-减少冗余代码，提高执行效率"
+      "v1.5.0": "优化插件获取方法，只保留通过PluginManager获取插件的方式，在插件列表中排除插件自身(proxycontroller)避免自我代理，减少冗余代码，提高执行效率"
     }
   },
   "proxytest": {
