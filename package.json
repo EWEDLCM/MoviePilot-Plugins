@@ -18,7 +18,7 @@
     "name": "插件代理控制器",
     "description": "控制其他插件是否使用 PROXY_HOST 代理",
     "labels": "代理,网络",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/proxycontroller.png",
     "author": "EWEDL",
     "level": 2,
