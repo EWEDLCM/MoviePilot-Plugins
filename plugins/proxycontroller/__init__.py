@@ -1,14 +1,13 @@
 """
 插件代理控制器
-版本: 1.5.0
+版本: 1.6.0
 作者: EWEDL
 功能:
 - 控制其他插件是否使用 PROXY_HOST 代理
 - 为指定插件提供代理功能
 - 支持按插件单独设置代理状态
 - 支持一键开关所有插件代理
-- 区分系统插件和用户插件
-- 提供单独的用户插件和系统插件选择下拉框
+- 提供用户插件选择下拉框
 """
 import os
 import sys
@@ -40,9 +39,9 @@ class proxycontroller(_PluginBase):
     # 插件描述
     plugin_desc = "控制其他插件是否使用 PROXY_HOST 代理"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/proxycontroller.png"
+    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MPtest/main/icons/proxycontroller.png"
     # 插件版本
-    plugin_version = "1.5.0"
+    plugin_version = "1.6.0"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -50,7 +49,7 @@ class proxycontroller(_PluginBase):
     # 插件配置项ID前缀
     plugin_config_prefix = "proxycontroller_"
     # 加载顺序
-    plugin_order = 0  
+    plugin_order = 0  # 设置为0，确保最先加载
     # 可使用的用户级别
     auth_level = 2
 
@@ -60,8 +59,8 @@ class proxycontroller(_PluginBase):
     _patched_plugins = set()
     _enabled_plugins = set()
     _enabled_user_plugins = []  # 用户插件列表
-    _enabled_system_plugins = []  # 系统插件列表
     _original_requests = {}
+    _original_request_utils = None
     _proxy_host = None
     _installed_plugins = []  # 缓存已安装的插件列表
     _plugins_source = {}  # 记录每个插件的检测方法
@@ -73,36 +72,30 @@ class proxycontroller(_PluginBase):
             self._installed_plugins, self._plugins_source = self.get_installed_plugins()
             logger.info(f"检测到已安装插件: {', '.join(self._installed_plugins) if self._installed_plugins else '无'}")
             
-            # 获取用户插件和系统插件
-            user_plugins, system_plugins = self.get_plugins_by_type()
+            # 获取用户插件
+            user_plugins = self.get_plugins_by_type()
             user_plugin_ids = [p.get('id') for p in user_plugins]
-            system_plugin_ids = [p.get('id') for p in system_plugins]
             
             logger.info(f"用户插件: {', '.join(user_plugin_ids) if user_plugin_ids else '无'}")
-            logger.info(f"系统插件: {', '.join(system_plugin_ids) if system_plugin_ids else '无'}")
             
             if config:
                 logger.info(f"加载配置: {config}")
                 self._enabled = config.get("enabled", False)
                 self._all_plugins_enabled = config.get("all_plugins_enabled", False)
                 
-                # 获取用户和系统插件配置
+                # 获取用户插件配置
                 self._enabled_user_plugins = config.get("enabled_user_plugins", [])
-                self._enabled_system_plugins = config.get("enabled_system_plugins", [])
                 
                 logger.info(f"配置中的用户插件: {self._enabled_user_plugins}")
-                logger.info(f"配置中的系统插件: {self._enabled_system_plugins}")
                 
                 # 确保配置的插件ID都是有效的
                 self._enabled_user_plugins = [p for p in self._enabled_user_plugins if p in user_plugin_ids]
-                self._enabled_system_plugins = [p for p in self._enabled_system_plugins if p in system_plugin_ids]
                 
-                # 合并为总的启用插件列表
-                self._enabled_plugins = set(self._enabled_user_plugins + self._enabled_system_plugins)
+                # 设置总的启用插件列表
+                self._enabled_plugins = set(self._enabled_user_plugins)
                 
                 logger.info(f"配置: enabled={self._enabled}, all_plugins_enabled={self._all_plugins_enabled}")
                 logger.info(f"已启用代理的用户插件: {', '.join(self._enabled_user_plugins) if self._enabled_user_plugins else '无'}")
-                logger.info(f"已启用代理的系统插件: {', '.join(self._enabled_system_plugins) if self._enabled_system_plugins else '无'}")
                 logger.info(f"总启用插件数: {len(self._enabled_plugins)}")
             
             # 获取 PROXY_HOST
@@ -247,6 +240,18 @@ class proxycontroller(_PluginBase):
             requests.Session.post = self._proxy_decorator(self._original_requests['Session.post'])
             requests.Session.request = self._proxy_decorator(self._original_requests['Session.request'])
             
+            # 添加对RequestUtils的支持
+            try:
+                from app.utils.http import RequestUtils
+                if not self._original_request_utils:
+                    self._original_request_utils = RequestUtils.request
+                RequestUtils.request = self._proxy_decorator(self._original_request_utils)
+                logger.info("已应用RequestUtils请求代理补丁")
+            except ImportError:
+                logger.debug("未找到RequestUtils类，跳过补丁")
+            except Exception as e:
+                logger.error(f"应用RequestUtils补丁失败: {str(e)}", exc_info=True)
+            
             logger.info("已应用请求代理补丁")
         except Exception as e:
             logger.error(f"应用猴子补丁失败: {str(e)}", exc_info=True)
@@ -262,6 +267,17 @@ class proxycontroller(_PluginBase):
                 requests.Session.post = self._original_requests['Session.post']
                 requests.Session.request = self._original_requests['Session.request']
                 logger.info("已恢复原始请求函数")
+            
+            # 恢复RequestUtils的原始方法
+            if self._original_request_utils:
+                try:
+                    from app.utils.http import RequestUtils
+                    RequestUtils.request = self._original_request_utils
+                    logger.info("已恢复RequestUtils原始请求函数")
+                except ImportError:
+                    logger.debug("未找到RequestUtils类，跳过恢复")
+                except Exception as e:
+                    logger.error(f"恢复RequestUtils原始函数失败: {str(e)}")
         except Exception as e:
             logger.error(f"恢复原始函数失败: {str(e)}")
 
@@ -272,17 +288,23 @@ class proxycontroller(_PluginBase):
             plugin_manager = PluginManager()
             local_plugins = plugin_manager.get_local_plugins() or []
             
+            # 筛选已安装的插件
+            installed_plugins = []
+            for plugin in local_plugins:
+                if getattr(plugin, 'installed', False):
+                    installed_plugins.append(plugin)
+            
             # 获取所有插件ID，排除自身
             plugin_ids = []
             plugins_source = {}
             
-            for plugin in local_plugins:
+            for plugin in installed_plugins:
                 plugin_id = getattr(plugin, 'id', None)
                 if plugin_id and plugin_id != PROXY_MODULE_NAME:  # 排除自身
                     plugin_ids.append(plugin_id)
-                    plugins_source[plugin_id] = "PluginManager"
+                    plugins_source[plugin_id] = "已安装插件"
             
-            logger.info(f"通过PluginManager获取到 {len(plugin_ids)} 个插件")
+            logger.info(f"获取到 {len(plugin_ids)} 个已安装插件")
             return plugin_ids, plugins_source
             
         except Exception as e:
@@ -308,7 +330,7 @@ class proxycontroller(_PluginBase):
         获取用户插件选项列表
         返回格式为[{"title": "插件名 v版本号", "value": "插件ID"}, ...]
         """
-        user_plugins, _ = self.get_plugins_by_type()
+        user_plugins = self.get_plugins_by_type()
         user_plugin_options = []
         
         for plugin in user_plugins:
@@ -331,248 +353,12 @@ class proxycontroller(_PluginBase):
         
         return user_plugin_options
     
-    def get_system_plugins(self):
+    def get_plugins_by_type(self) -> List[Dict]:
         """
-        获取系统插件选项列表
-        返回格式为[{"title": "插件名 v版本号", "value": "插件ID"}, ...]
-        """
-        _, system_plugins = self.get_plugins_by_type()
-        system_plugin_options = []
-        
-        for plugin in system_plugins:
-            plugin_id = plugin.get('id')
-            plugin_name = plugin.get('name', plugin_id)
-            plugin_version = plugin.get('version', '未知')
-            system_plugin_options.append({
-                "title": f"{plugin_name} v{plugin_version}",
-                "value": plugin_id
-            })
-            logger.debug(f"添加系统插件选项: {plugin_name} ({plugin_id}) v{plugin_version}")
-        
-        # 如果没有找到任何插件，添加提示信息
-        if not system_plugin_options:
-            system_plugin_options = [{
-                "title": "未找到系统插件",
-                "value": "",
-                "disabled": True
-            }]
-        
-        return system_plugin_options
-    
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """获取表单配置"""
-        try:
-            # 获取插件列表
-            user_plugins, system_plugins = self.get_plugins_by_type()
-            # 记录插件数量
-            user_plugin_count = len(user_plugins)
-            system_plugin_count = len(system_plugins)
-            total_plugin_count = user_plugin_count + system_plugin_count
-            logger.info(f"检测到 {user_plugin_count} 个用户插件，{system_plugin_count} 个系统插件")
-
-            # 构建用户插件选项
-            user_plugin_options = []
-            for plugin in user_plugins:
-                plugin_id = plugin.get('id')
-                plugin_name = plugin.get('name', plugin_id)
-                plugin_version = plugin.get('version', '未知')
-                if plugin_id:
-                    user_plugin_options.append({
-                        "title": f"{plugin_name} v{plugin_version}",
-                        "value": plugin_id
-                    })
-
-            # 构建系统插件选项
-            system_plugin_options = []
-            for plugin in system_plugins:
-                plugin_id = plugin.get('id')
-                plugin_name = plugin.get('name', plugin_id)
-                plugin_version = plugin.get('version', '未知')
-                if plugin_id:
-                    system_plugin_options.append({
-                        "title": f"{plugin_name} v{plugin_version}",
-                        "value": plugin_id
-                    })
-
-            # 如果没有找到任何插件，添加提示信息
-            if not user_plugin_options:
-                user_plugin_options = [{
-                    "title": "暂无用户插件",
-                    "value": "",
-                    "disabled": True
-                }]
-            if not system_plugin_options:
-                system_plugin_options = [{
-                    "title": "暂无系统插件",
-                    "value": "",
-                    "disabled": True
-                }]
-
-            # 构建表单结构
-            return [
-                {
-                    'component': 'VForm',
-                    'content': [
-                        {
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12,
-                                        'md': 3
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VSwitch',
-                                            'props': {
-                                                'model': 'enabled',
-                                                'label': '启用插件代理控制'
-                                            }
-                                        }
-                                    ]
-                                },
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12,
-                                        'md': 3
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VSwitch',
-                                            'props': {
-                                                'model': 'all_plugins_enabled',
-                                                'label': '为所有插件启用代理'
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12,
-                                        'md': 6
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VSelect',
-                                            'props': {
-                                                'multiple': True,
-                                                'chips': True,
-                                                'closable-chips': True,
-                                                'model': 'enabled_user_plugins',
-                                                'label': '选择用户插件',
-                                                'items': user_plugin_options,
-                                                ':disabled': 'formData.all_plugins_enabled',  # ✅ 修复点
-                                                'persistent-hint': True,
-                                                'hint': '选择需要启用代理的用户插件'
-                                            }
-                                        }
-                                    ]
-                                },
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12,
-                                        'md': 6
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VSelect',
-                                            'props': {
-                                                'multiple': True,
-                                                'chips': True,
-                                                'closable-chips': True,
-                                                'model': 'enabled_system_plugins',
-                                                'label': '选择系统插件',
-                                                'items': system_plugin_options,
-                                                ':disabled': 'formData.all_plugins_enabled',  # ✅ 修复点
-                                                'persistent-hint': True,
-                                                'hint': '选择需要启用代理的系统插件'
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VAlert',
-                                            'props': {
-                                                'type': 'info',
-                                                'variant': 'tonal',
-                                                'text': f'当前 PROXY_HOST: {self._proxy_host or "未设置"}, 共检测到 {total_plugin_count} 个插件 (用户插件: {user_plugin_count}, 系统插件: {system_plugin_count})'
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ], {
-                "enabled": self._enabled,
-                "all_plugins_enabled": self._all_plugins_enabled,
-                "enabled_user_plugins": self._enabled_user_plugins or [],
-                "enabled_system_plugins": self._enabled_system_plugins or []
-            }
-
-        except Exception as e:
-            logger.error(f"获取表单配置失败: {str(e)}", exc_info=True)
-            return [
-                {
-                    'component': 'VForm',
-                    'content': [
-                        {
-                            'component': 'VRow',
-                            'content': [
-                                {
-                                    'component': 'VCol',
-                                    'props': {
-                                        'cols': 12
-                                    },
-                                    'content': [
-                                        {
-                                            'component': 'VAlert',
-                                            'props': {
-                                                'type': 'error',
-                                                'text': f'加载配置失败: {str(e)}'
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ], {
-                "enabled": self._enabled,
-                "all_plugins_enabled": False,
-                "enabled_user_plugins": [],
-                "enabled_system_plugins": []
-            }
-
-    def get_plugins_by_type(self) -> Tuple[List[Dict], List[Dict]]:
-        """
-        获取用户插件和系统插件
-        返回两个列表：用户插件列表和系统插件列表
+        获取用户插件
+        返回用户插件列表
         """
         user_plugins = []
-        system_plugins = []
         
         try:
             # 使用 PluginManager 获取插件信息
@@ -582,7 +368,15 @@ class proxycontroller(_PluginBase):
             # 获取已安装的用户插件列表
             installed_user_plugins = SystemConfigOper().get(SystemConfigKey.UserInstalledPlugins) or []
             
+            # 筛选已安装的插件
+            installed_plugins = []
             for plugin in local_plugins:
+                if getattr(plugin, 'installed', False):
+                    installed_plugins.append(plugin)
+            
+            logger.info(f"检测到已安装插件总数: {len(installed_plugins)}")
+            
+            for plugin in installed_plugins:
                 plugin_id = getattr(plugin, 'id', None)
                 if not plugin_id:
                     continue
@@ -599,38 +393,34 @@ class proxycontroller(_PluginBase):
                     'desc': getattr(plugin, 'plugin_desc', '')
                 }
                 
-                # 判断是否为用户插件
+                # 只添加用户插件
                 if plugin_id in installed_user_plugins:
                     user_plugins.append(plugin_info)
-                else:
-                    system_plugins.append(plugin_info)
             
-            logger.info(f"通过 PluginManager 获取到 {len(user_plugins)} 个用户插件，{len(system_plugins)} 个系统插件")
+            logger.info(f"已安装的用户插件: {len(user_plugins)} 个")
                 
         except Exception as e:
-            logger.error(f"通过 PluginManager 获取插件失败: {str(e)}")
+            logger.error(f"获取已安装插件失败: {str(e)}")
             # 如果获取失败，返回空列表
-            return [], []
+            return []
         
         # 确保返回的是非空列表，即使为空也要返回空列表而不是None
-        return user_plugins or [], system_plugins or []
+        return user_plugins or []
     
     def update_config(self, config: dict):
-        """更新配置时合并用户插件和系统插件"""
+        """更新配置"""
         if config:
             logger.info(f"更新配置: {config}")
             self._enabled = config.get("enabled", False)
             self._all_plugins_enabled = config.get("all_plugins_enabled", False)
             
-            # 获取并记录用户和系统插件
+            # 获取用户插件
             self._enabled_user_plugins = config.get("enabled_user_plugins", [])
-            self._enabled_system_plugins = config.get("enabled_system_plugins", [])
             
             logger.info(f"更新后的用户插件: {self._enabled_user_plugins}")
-            logger.info(f"更新后的系统插件: {self._enabled_system_plugins}")
             
-            # 合并为总的启用插件列表
-            self._enabled_plugins = set(self._enabled_user_plugins + self._enabled_system_plugins)
+            # 设置总的启用插件列表
+            self._enabled_plugins = set(self._enabled_user_plugins)
             logger.info(f"更新后的总启用插件数: {len(self._enabled_plugins)}")
             
             # 如果启用了代理控制，应用猴子补丁
@@ -643,35 +433,6 @@ class proxycontroller(_PluginBase):
         """获取插件页面"""
         # 使用缓存的插件列表
         installed_plugins = self._installed_plugins
-        
-        # 构建数据表格的列配置
-        columns = [
-            {'field': 'plugin', 'title': '插件名称', 'width': '200px'},
-            {'field': 'detection_method', 'title': '检测方法', 'width': '150px'},
-            {'field': 'proxy_status', 'title': '代理状态', 'width': '120px'}
-        ]
-        
-        # 构建表格的数据
-        items = []
-        for plugin in installed_plugins:
-            proxy_status = "已启用" if (self._all_plugins_enabled or plugin in self._enabled_plugins) and self._enabled else "未启用"
-            detection_method = self._plugins_source.get(plugin, "未知")
-            items.append({
-                "plugin": plugin,
-                "detection_method": detection_method,
-                "proxy_status": proxy_status
-            })
-        
-        # 构建表格的选项配置
-        options = {
-            'headers': columns,
-            'itemsPerPage': 20,  # 增加默认显示数量
-            'itemsPerPageOptions': [10, 20, 50, 100],  # 增加更多选项
-            'sortBy': [{'key': 'plugin', 'order': 'asc'}],
-            'separator': 'horizontal',
-            'class': 'elevation-0',
-            'footerProps': {'showFirstLastPage': True, 'itemsPerPageOptions': [10, 20, 50, 100]}
-        }
         
         return [
             {
@@ -752,7 +513,7 @@ class proxycontroller(_PluginBase):
                                                             },
                                                             {
                                                                 'component': 'div',
-                                                                'text': f"已启用代理的插件数: {len(self._enabled_plugins) if not self._all_plugins_enabled else len(installed_plugins)}",
+                                                                'text': f"已启用代理的用户插件数: {len(self._enabled_plugins) if not self._all_plugins_enabled else len(installed_plugins)}",
                                                                 'props': {
                                                                     'class': 'text-body-1'
                                                                 }
@@ -764,55 +525,6 @@ class proxycontroller(_PluginBase):
                                         ]
                                     }
                                 ]
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                'component': 'VRow',
-                'content': [
-                    {
-                        'component': 'VCol',
-                        'props': {
-                            'cols': 12
-                        },
-                        'content': [
-                            {
-                                'component': 'VTextField',
-                                'props': {
-                                    'label': '搜索插件',
-                                    'prepend-inner-icon': 'mdi-magnify',
-                                    'hide-details': True,
-                                    'variant': 'outlined',
-                                    'density': 'compact',
-                                    'class': 'mb-4',
-                                    'v-model': 'searchQuery'
-                                }
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                'component': 'VRow',
-                'content': [
-                    {
-                        'component': 'VCol',
-                        'props': {
-                            'cols': 12
-                        },
-                        'content': [
-                            {
-                                'component': 'VDataTable',
-                                'props': {
-                                    'headers': options['headers'],
-                                    'items': items,
-                                    'itemsPerPage': options['itemsPerPage'], 
-                                    'footer-props': options['footerProps'],
-                                    'class': 'elevation-1',
-                                    'search': '{{searchQuery}}'
-                                }
                             }
                         ]
                     }
@@ -846,7 +558,7 @@ class proxycontroller(_PluginBase):
                                             },
                                             {
                                                 'component': 'div',
-                                                'text': '1. 启用插件代理控制后，可以选择为所有插件启用代理，或者只为特定插件启用代理',
+                                                'text': '1. 启用插件代理控制后，可以选择为所有插件启用代理，或者只为特定用户插件启用代理',
                                                 'props': {
                                                     'class': 'text-body-1 mt-2'
                                                 }
@@ -861,13 +573,6 @@ class proxycontroller(_PluginBase):
                                             {
                                                 'component': 'div',
                                                 'text': '3. 如果插件自身已经设置了代理，则不会被覆盖',
-                                                'props': {
-                                                    'class': 'text-body-1'
-                                                }
-                                            },
-                                            {
-                                                'component': 'div',
-                                                'text': '4. 检测方法显示了每个插件是通过哪种方式被发现的',
                                                 'props': {
                                                     'class': 'text-body-1'
                                                 }
@@ -912,10 +617,172 @@ class proxycontroller(_PluginBase):
                 "enabled_plugins": list(self._enabled_plugins),
                 "proxy_host": self._proxy_host,
                 "installed_plugins": self._installed_plugins,
-                "plugins_source": self._plugins_source
+                "plugins_source": self._plugins_source,
+                "user_plugins": self._enabled_user_plugins
             }
         }
 
     def get_api(self) -> List[Dict[str, Any]]:
         """注册API"""
         return [] 
+
+    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
+        """获取表单配置"""
+        try:
+            # 获取插件列表
+            user_plugins = self.get_plugins_by_type()
+            # 记录插件数量
+            user_plugin_count = len(user_plugins)
+            logger.info(f"检测到 {user_plugin_count} 个用户插件")
+
+            # 构建用户插件选项
+            user_plugin_options = []
+            for plugin in user_plugins:
+                plugin_id = plugin.get('id')
+                plugin_name = plugin.get('name', plugin_id)
+                plugin_version = plugin.get('version', '未知')
+                if plugin_id:
+                    user_plugin_options.append({
+                        "title": f"{plugin_name} v{plugin_version}",
+                        "value": plugin_id
+                    })
+
+            # 如果没有找到任何插件，添加提示信息
+            if not user_plugin_options:
+                user_plugin_options = [{
+                    "title": "暂无用户插件",
+                    "value": "",
+                    "disabled": True
+                }]
+
+            # 构建表单结构
+            return [
+                {
+                    'component': 'VForm',
+                    'content': [
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {
+                                    'component': 'VCol',
+                                    'props': {
+                                        'cols': 12,
+                                        'md': 3
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VSwitch',
+                                            'props': {
+                                                'model': 'enabled',
+                                                'label': '启用插件代理控制'
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    'component': 'VCol',
+                                    'props': {
+                                        'cols': 12,
+                                        'md': 3
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VSwitch',
+                                            'props': {
+                                                'model': 'all_plugins_enabled',
+                                                'label': '为所有插件启用代理'
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {
+                                    'component': 'VCol',
+                                    'props': {
+                                        'cols': 12
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VSelect',
+                                            'props': {
+                                                'multiple': True,
+                                                'chips': True,
+                                                'closable-chips': True,
+                                                'model': 'enabled_user_plugins',
+                                                'label': '选择用户插件',
+                                                'items': user_plugin_options,
+                                                ':disabled': 'formData.all_plugins_enabled',
+                                                'persistent-hint': True,
+                                                'hint': '选择需要启用代理的用户插件'
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {
+                                    'component': 'VCol',
+                                    'props': {
+                                        'cols': 12
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VAlert',
+                                            'props': {
+                                                'type': 'info',
+                                                'variant': 'tonal',
+                                                'text': f'当前 PROXY_HOST: {self._proxy_host or "未设置"}, 共检测到 {user_plugin_count} 个用户插件'
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ], {
+                "enabled": self._enabled,
+                "all_plugins_enabled": self._all_plugins_enabled,
+                "enabled_user_plugins": self._enabled_user_plugins or []
+            }
+
+        except Exception as e:
+            logger.error(f"获取表单配置失败: {str(e)}", exc_info=True)
+            return [
+                {
+                    'component': 'VForm',
+                    'content': [
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {
+                                    'component': 'VCol',
+                                    'props': {
+                                        'cols': 12
+                                    },
+                                    'content': [
+                                        {
+                                            'component': 'VAlert',
+                                            'props': {
+                                                'type': 'error',
+                                                'text': f'加载配置失败: {str(e)}'
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ], {
+                "enabled": self._enabled,
+                "all_plugins_enabled": False,
+                "enabled_user_plugins": []
+            } 
