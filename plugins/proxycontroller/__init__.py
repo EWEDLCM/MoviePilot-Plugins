@@ -40,7 +40,7 @@ class proxycontroller(_PluginBase):
     # 插件描述
     plugin_desc = "控制其他插件是否使用 PROXY_HOST 代理"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MPtest/main/icons/proxycontroller.png"
+    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/proxycontroller.png"
     # 插件版本
     plugin_version = "1.5.0"
     # 插件作者
