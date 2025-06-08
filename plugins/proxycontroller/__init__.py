@@ -50,7 +50,7 @@ class proxycontroller(_PluginBase):
     # 插件配置项ID前缀
     plugin_config_prefix = "proxycontroller_"
     # 加载顺序
-    plugin_order = 0  # 设置为0，确保最先加载
+    plugin_order = 0  
     # 可使用的用户级别
     auth_level = 2
 
