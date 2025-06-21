@@ -1,6 +1,6 @@
 """
 插件代理控制器
-版本: 1.6.0
+版本: 1.6.2
 作者: EWEDL
 功能:
 - 控制其他插件是否使用 PROXY_HOST 代理
@@ -8,6 +8,7 @@
 - 支持按插件单独设置代理状态
 - 支持一键开关所有插件代理
 - 提供用户插件选择下拉框
+- 支持对RequestUtils的代理控制
 """
 import os
 import sys
@@ -41,7 +42,7 @@ class proxycontroller(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MPtest/main/icons/proxycontroller.png"
     # 插件版本
-    plugin_version = "1.6.0"
+    plugin_version = "1.6.2"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -240,13 +241,24 @@ class proxycontroller(_PluginBase):
             requests.Session.post = self._proxy_decorator(self._original_requests['Session.post'])
             requests.Session.request = self._proxy_decorator(self._original_requests['Session.request'])
             
-            # 添加对RequestUtils的支持
+            # 添加对RequestUtils的支持（增强版，兼容类方法和实例方法）
             try:
                 from app.utils.http import RequestUtils
-                if not self._original_request_utils:
+                # 备份原始方法
+                if not hasattr(self, "_original_request_utils") or self._original_request_utils is None:
                     self._original_request_utils = RequestUtils.request
+                # patch 类方法
                 RequestUtils.request = self._proxy_decorator(self._original_request_utils)
-                logger.info("已应用RequestUtils请求代理补丁")
+                # patch 实例方法
+                original_init = getattr(RequestUtils, "__init__", None)
+                if original_init and not hasattr(RequestUtils, "_proxy_patched"):
+                    def new_init(inst, *args, **kwargs):
+                        if original_init:
+                            original_init(inst, *args, **kwargs)
+                        inst.request = self._proxy_decorator(inst.request)
+                    RequestUtils.__init__ = new_init
+                    RequestUtils._proxy_patched = True
+                logger.info("已应用RequestUtils请求代理补丁（类方法+实例方法）")
             except ImportError:
                 logger.debug("未找到RequestUtils类，跳过补丁")
             except Exception as e:
@@ -269,10 +281,12 @@ class proxycontroller(_PluginBase):
                 logger.info("已恢复原始请求函数")
             
             # 恢复RequestUtils的原始方法
-            if self._original_request_utils:
+            if hasattr(self, "_original_request_utils") and self._original_request_utils:
                 try:
                     from app.utils.http import RequestUtils
                     RequestUtils.request = self._original_request_utils
+                    if hasattr(RequestUtils, "_proxy_patched"):
+                        delattr(RequestUtils, "_proxy_patched")
                     logger.info("已恢复RequestUtils原始请求函数")
                 except ImportError:
                     logger.debug("未找到RequestUtils类，跳过恢复")
