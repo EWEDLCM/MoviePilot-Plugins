@@ -39,5 +39,18 @@
     "history": {
       "v1.0.0": "仅用于支持测试容器代理设置并使用代理访问外网"
     }
+  },
+    "yjj": {
+    "name": "邮件集",
+    "description": "实时监控邮箱，支持验证码AI识别和关键词过滤，自动推送重要邮件",
+    "labels": "邮件,推送,AI",
+    "version": "1.0.0",
+    "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png",
+    "author": "EWEDL",
+    "level": 2,
+    "v2": true,
+    "history": {
+      "v1.0.0": "仅用于支持测试容器代理设置并使用代理访问外网"
+    }
   }
 } 
