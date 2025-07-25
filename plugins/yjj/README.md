@@ -67,15 +67,14 @@ test@163.com|qrstuvwxyz123456
 4. **消息推送**：符合条件的邮件通过选定的通知渠道推送给用户
 
 ## 支持的邮箱服务商
-理论支持
-- QQ邮箱 (imap.qq.com)
-- 163邮箱 (imap.163.com)
-- 126邮箱 (imap.126.com)
-- Gmail (imap.gmail.com)
-- Outlook/Hotmail (outlook.office365.com)
-- Yahoo邮箱 (imap.mail.yahoo.com)
-- 新浪邮箱 (imap.sina.com)
-- 搜狐邮箱 (imap.sohu.com)
+- QQ邮箱 (imap.qq.com) 【确认支持】
+- 163邮箱 (imap.163.com) 【确认支持】
+- 126邮箱 (imap.126.com) 【理论支持，没测试】
+- Gmail (imap.gmail.com) 【已经寄了，等待其他方式验证】
+- Outlook/Hotmail (outlook.office365.com) 【理论支持，没测试】
+- Yahoo邮箱 (imap.mail.yahoo.com) 【理论支持，没测试】
+- 新浪邮箱 (imap.sina.com) 【理论支持，没测试】
+- 搜狐邮箱 (imap.sohu.com) 【理论支持，没测试】
 
 ## 注意事项
 
