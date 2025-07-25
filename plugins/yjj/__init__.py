@@ -1,6 +1,6 @@
 """
 邮件集插件
-版本: 1.0.0
+版本: 1.0.1
 作者: EWEDL
 功能:
 - 使用IMAP协议实时监控邮箱
@@ -39,7 +39,7 @@ class yjj(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -82,7 +82,7 @@ class yjj(_PluginBase):
         self.stop_monitoring()
 
         logger.info("=" * 60)
-        logger.info("邮件集插件 (yjj) v1.0.0 - 初始化开始")
+        logger.info("邮件集插件 (yjj) v1.0.1 - 初始化开始")
         logger.info("=" * 60)
 
         try:
