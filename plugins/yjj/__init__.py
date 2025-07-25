@@ -367,14 +367,45 @@ class yjj(_PluginBase):
                 mail.login(email_addr, password)
                 logger.info(f"[{email_addr}] 登录认证成功")
 
-                mail.select('INBOX')
-                logger.debug(f"[{email_addr}] 已选择收件箱")
+                # 对于163邮箱，需要发送ID命令标识客户端
+                if '163.com' in email_addr.lower():
+                    try:
+                        imap_id = ("name", "MoviePilot-Email-Plugin", "version", "1.0.1", "vendor", "EWEDL")
+                        typ, data = mail.xatom('ID', '("' + '" "'.join(imap_id) + '")')
+                        logger.debug(f"[{email_addr}] 163邮箱ID命令执行成功: {typ} - {data}")
+                    except Exception as e:
+                        logger.warning(f"[{email_addr}] 163邮箱ID命令执行失败: {str(e)}")
+
+                # 选择收件箱并验证状态
+                result, data = mail.select('INBOX')
+                if result != 'OK':
+                    raise Exception(f"选择收件箱失败: {result} - {data}")
+                logger.debug(f"[{email_addr}] 已选择收件箱，状态: {result}")
+
+                # 等待一小段时间确保状态稳定
+                time.sleep(0.5)
+
+                # 验证连接状态
+                try:
+                    mail.noop()
+                    logger.debug(f"[{email_addr}] 连接状态验证成功")
+                except Exception as e:
+                    raise Exception(f"连接状态验证失败: {str(e)}")
 
                 self._imap_connections[email_addr] = mail
                 retry_count = 0  # 重置重试计数
 
                 # 获取当前最新邮件数量作为基准
-                _, messages = mail.search(None, 'ALL')
+                try:
+                    _, messages = mail.search(None, 'ALL')
+                except imaplib.IMAP4.error as e:
+                    if "illegal in state" in str(e).lower():
+                        logger.warning(f"[{email_addr}] 首次SEARCH失败，重新选择收件箱: {str(e)}")
+                        mail.select('INBOX')
+                        time.sleep(0.5)
+                        _, messages = mail.search(None, 'ALL')
+                    else:
+                        raise
                 if messages[0]:
                     message_ids = messages[0].split()
                     last_count = len(message_ids)
@@ -392,8 +423,26 @@ class yjj(_PluginBase):
                         check_count += 1
                         current_time = time.time()
 
+                        # 确保邮箱处于SELECTED状态，防止连接断开后状态丢失
+                        try:
+                            # 先检查连接状态
+                            mail.noop()
+                        except (imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
+                            logger.warning(f"[{email_addr}] 连接状态异常，重新选择邮箱: {str(e)}")
+                            mail.select('INBOX')
+                            time.sleep(0.5)  # 等待状态稳定
+
                         # 检查邮件数量变化
-                        _, current_messages = mail.search(None, 'ALL')
+                        try:
+                            _, current_messages = mail.search(None, 'ALL')
+                        except imaplib.IMAP4.error as e:
+                            if "illegal in state" in str(e).lower():
+                                logger.warning(f"[{email_addr}] SEARCH命令状态错误，重新选择收件箱: {str(e)}")
+                                mail.select('INBOX')
+                                time.sleep(0.5)
+                                _, current_messages = mail.search(None, 'ALL')
+                            else:
+                                raise
                         if current_messages[0]:
                             current_ids = current_messages[0].split()
                             current_count = len(current_ids)
@@ -415,19 +464,35 @@ class yjj(_PluginBase):
 
                         # 每2分钟发送一次NOOP保持连接（静默执行，不记录日志）
                         if current_time - last_noop_time > 120:  # 2分钟
-                            mail.noop()
-                            last_noop_time = current_time
+                            try:
+                                mail.noop()
+                                last_noop_time = current_time
+                            except (imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
+                                logger.warning(f"[{email_addr}] NOOP失败，可能需要重连: {str(e)}")
+                                # 不立即break，让下次循环处理重连
 
                         # 等待一段时间再检查（已调整为20秒）
                         time.sleep(20)
 
+                    except imaplib.IMAP4.error as e:
+                        error_msg = str(e).lower()
+                        if "illegal in state auth" in error_msg or "not authenticated" in error_msg:
+                            logger.warning(f"[{email_addr}] IMAP状态错误，需要重新建立连接: {str(e)}")
+                            break  # 跳出内层循环，重新建立连接
+                        else:
+                            logger.error(f"[{email_addr}] ❌ IMAP协议错误: {str(e)}")
+                            break
                     except Exception as e:
                         logger.error(f"[{email_addr}] ❌ 监控过程中出错: {str(e)}")
                         break
 
             except imaplib.IMAP4.error as e:
                 retry_count += 1
-                logger.error(f"[{email_addr}] ❌ IMAP协议错误 (重试 {retry_count}/{max_retries}): {str(e)}")
+                error_msg = str(e).lower()
+                if "illegal in state auth" in error_msg:
+                    logger.error(f"[{email_addr}] ❌ IMAP状态错误 (重试 {retry_count}/{max_retries}): {str(e)} - 连接可能已断开")
+                else:
+                    logger.error(f"[{email_addr}] ❌ IMAP协议错误 (重试 {retry_count}/{max_retries}): {str(e)}")
             except Exception as e:
                 retry_count += 1
                 logger.error(f"[{email_addr}] ❌ 连接失败 (重试 {retry_count}/{max_retries}): {str(e)}")
@@ -436,8 +501,15 @@ class yjj(_PluginBase):
                 # 清理连接
                 if mail:
                     try:
-                        mail.close()
-                        mail.logout()
+                        # 尝试优雅关闭连接
+                        try:
+                            mail.close()
+                        except:
+                            pass  # 如果close失败，继续尝试logout
+                        try:
+                            mail.logout()
+                        except:
+                            pass  # 如果logout失败，忽略错误
                         logger.debug(f"[{email_addr}] IMAP连接已清理")
                     except:
                         pass
