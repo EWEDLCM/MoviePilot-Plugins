@@ -36,7 +36,7 @@ class proxytest(_PluginBase):
     # 插件描述
     plugin_desc = "测试容器内的HTTP代理设置，并尝试使用代理连接外网"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MPtest/main/icons/proxytest.png"
+    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/proxytest.png"
     # 插件版本
     plugin_version = "1.1.1"  # 更新版本号
     # 插件作者
