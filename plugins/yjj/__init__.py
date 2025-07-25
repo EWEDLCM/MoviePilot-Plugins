@@ -1,11 +1,12 @@
 """
 邮件集插件
-版本: 1.0.1
+版本: 1.1.0
 作者: EWEDL
 功能:
 - 使用IMAP协议实时监控邮箱
 - 验证码AI识别
 - 关键词邮件过滤
+- 全部推送功能（优先级最高）
 - 支持代理环境
 - 多邮箱支持
 - 消息推送
@@ -35,11 +36,11 @@ class yjj(_PluginBase):
     # 插件名称
     plugin_name = "邮件集"
     # 插件描述
-    plugin_desc = "实时监控邮箱，支持验证码AI识别和关键词过滤，自动推送重要邮件"
+    plugin_desc = "实时监控邮箱，支持验证码AI识别、关键词过滤和全部推送功能"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png"
     # 插件版本
-    plugin_version = "1.0.1"
+    plugin_version = "1.1.0"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -61,6 +62,7 @@ class yjj(_PluginBase):
     _ai_key = ""
     _ai_model = ""
     _keywords = ""
+    _push_all = False  # 全部推送开关
     
     # 运行时属性
     _monitor_threads = []
@@ -82,7 +84,7 @@ class yjj(_PluginBase):
         self.stop_monitoring()
 
         logger.info("=" * 60)
-        logger.info("邮件集插件 (yjj) v1.0.1 - 初始化开始")
+        logger.info("邮件集插件 (yjj) v1.1.0 - 初始化开始")
         logger.info("=" * 60)
 
         try:
@@ -96,10 +98,12 @@ class yjj(_PluginBase):
                 self._ai_key = config.get("ai_key", "")
                 self._ai_model = config.get("ai_model", "")
                 self._keywords = config.get("keywords", "")
+                self._push_all = config.get("push_all", False)
 
                 logger.info(f"[配置] 插件启用状态: {self._enabled}")
                 logger.info(f"[配置] 代理使用状态: {self._use_proxy}")
                 logger.info(f"[配置] AI识别状态: {self._ai_enabled}")
+                logger.info(f"[配置] 全部推送状态: {self._push_all}")
                 logger.info(f"[配置] 通知渠道: {self._msgtype or '默认'}")
 
                 # 解析邮箱配置
@@ -207,10 +211,10 @@ class yjj(_PluginBase):
             if not line or line.startswith('#'):
                 continue
                 
-            parts = line.split('|')
+            parts = line.split('|', 1)  # 只分割第一个管道符号
             if len(parts) >= 2:
                 email_addr = parts[0].strip()
-                password = parts[1].strip()
+                password = parts[1].strip()  # 保留密码中可能存在的管道符号
                 
                 if email_addr and password:
                     # 根据邮箱地址推断IMAP服务器
@@ -237,11 +241,8 @@ class yjj(_PluginBase):
             '163.com': 'imap.163.com',
             '126.com': 'imap.126.com',
             'gmail.com': 'imap.gmail.com',
-            'outlook.com': 'outlook.office365.com',
-            'hotmail.com': 'outlook.office365.com',
-            'yahoo.com': 'imap.mail.yahoo.com',
             'sina.com': 'imap.sina.com',
-            'sohu.com': 'imap.sohu.com'
+            'sina.cn': 'imap.sina.cn',  # 新浪cn邮箱使用专用服务器
         }
         
         return imap_servers.get(domain)
@@ -367,14 +368,20 @@ class yjj(_PluginBase):
                 mail.login(email_addr, password)
                 logger.info(f"[{email_addr}] 登录认证成功")
 
-                # 对于163邮箱，需要发送ID命令标识客户端
-                if '163.com' in email_addr.lower():
+                # 对于需要ID命令的邮箱服务商进行特殊处理
+                netease_domains = ['163.com', '126.com']  # 网易邮箱系统
+                if any(domain in email_addr.lower() for domain in netease_domains):
                     try:
-                        imap_id = ("name", "MoviePilot-Email-Plugin", "version", "1.0.1", "vendor", "EWEDL")
+                        # 网易邮箱要求发送ID命令标识客户端身份（基于RFC 2971协议）
+                        imap_id = ("name", "MoviePilot-Email-Plugin", "version", "1.0.1", "vendor", "EWEDL", "contact", email_addr)
                         typ, data = mail.xatom('ID', '("' + '" "'.join(imap_id) + '")')
-                        logger.debug(f"[{email_addr}] 163邮箱ID命令执行成功: {typ} - {data}")
+                        logger.info(f"[{email_addr}] 网易邮箱ID命令执行成功: {typ}")
+                        logger.debug(f"[{email_addr}] ID响应详情: {data}")
                     except Exception as e:
-                        logger.warning(f"[{email_addr}] 163邮箱ID命令执行失败: {str(e)}")
+                        logger.warning(f"[{email_addr}] 网易邮箱ID命令执行失败: {str(e)}")
+                        # ID命令失败不应该阻止后续连接尝试
+                else:
+                    logger.debug(f"[{email_addr}] 非网易邮箱，跳过ID命令")
 
                 # 选择收件箱并验证状态
                 result, data = mail.select('INBOX')
@@ -462,14 +469,23 @@ class yjj(_PluginBase):
                                 last_count = current_count
                                 logger.info(f"[{email_addr}] ✅ 新邮件处理完成")
 
-                        # 每2分钟发送一次NOOP保持连接（静默执行，不记录日志）
-                        if current_time - last_noop_time > 120:  # 2分钟
+                        # 每90秒发送一次NOOP保持连接（Gmail优化）
+                        if current_time - last_noop_time > 90:  # 90秒
                             try:
                                 mail.noop()
                                 last_noop_time = current_time
+                                logger.debug(f"[{email_addr}] 保活NOOP成功")
                             except (imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
-                                logger.warning(f"[{email_addr}] NOOP失败，可能需要重连: {str(e)}")
-                                # 不立即break，让下次循环处理重连
+                                logger.warning(f"[{email_addr}] NOOP失败，连接可能已断开: {str(e)}")
+                                break  # 立即重连
+                            except Exception as e:
+                                error_str = str(e)
+                                if "ssl" in error_str.lower() or "eof" in error_str.lower():
+                                    logger.warning(f"[{email_addr}] SSL连接异常，需要重连: {str(e)}")
+                                    break  # SSL问题立即重连
+                                else:
+                                    logger.warning(f"[{email_addr}] NOOP异常: {str(e)}")
+                                    break
 
                         # 等待一段时间再检查（已调整为20秒）
                         time.sleep(20)
@@ -495,7 +511,13 @@ class yjj(_PluginBase):
                     logger.error(f"[{email_addr}] ❌ IMAP协议错误 (重试 {retry_count}/{max_retries}): {str(e)}")
             except Exception as e:
                 retry_count += 1
-                logger.error(f"[{email_addr}] ❌ 连接失败 (重试 {retry_count}/{max_retries}): {str(e)}")
+                error_str = str(e).lower()
+                if "ssl" in error_str or "eof" in error_str or "socket" in error_str:
+                    logger.error(f"[{email_addr}] ❌ SSL/网络连接失败 (重试 {retry_count}/{max_retries}): {str(e)}")
+                    if "gmail.com" in email_addr.lower():
+                        logger.info(f"[{email_addr}] 💡 Gmail SSL提示: 网络连接不稳定，将自动重试")
+                else:
+                    logger.error(f"[{email_addr}] ❌ 连接失败 (重试 {retry_count}/{max_retries}): {str(e)}")
 
             finally:
                 # 清理连接
@@ -518,7 +540,11 @@ class yjj(_PluginBase):
 
             # 如果连接断开，等待后重试
             if self._running and retry_count < max_retries:
-                wait_time = min(30 * retry_count, 300)  # 递增等待时间，最大5分钟
+                # Gmail使用更短的重连间隔
+                if "gmail.com" in email_addr.lower():
+                    wait_time = min(10 * retry_count, 60)  # Gmail: 10秒递增，最大1分钟
+                else:
+                    wait_time = min(30 * retry_count, 300)  # 其他邮箱: 30秒递增，最大5分钟
                 logger.warning(f"[{email_addr}] 🔄 连接断开，{wait_time}秒后进行第 {retry_count+1} 次重试...")
                 time.sleep(wait_time)
 
@@ -586,23 +612,38 @@ class yjj(_PluginBase):
             email_content = text_content or html_content or ""
             full_content = f"{subject}\n{email_content}"
 
+            # 实现新的优先级逻辑：全部推送 > 验证码AI识别 > 关键词识别
+            logger.debug(f"[{email_addr}] 🔍 开始邮件处理优先级判断...")
+
             # 检查是否为验证码邮件
-            logger.debug(f"[{email_addr}] 🔍 检查是否为验证码邮件...")
             is_verification = self._is_verification_email(full_content)
 
-            if is_verification:
+            # 优先级1：全部推送
+            if self._push_all:
+                logger.info(f"[{email_addr}] 🌐 全部推送已启用")
+
+                # 即使开启全部推送，如果是验证码邮件且AI识别启用，仍需要走AI流程
+                if is_verification and self._ai_enabled:
+                    logger.info(f"[{email_addr}] 🔐 验证码邮件 + AI识别启用，走AI处理流程")
+                    self._handle_verification_email_async(subject, email_content, attachments, sender, email_addr)
+                else:
+                    # 直接推送所有邮件
+                    logger.info(f"[{email_addr}] 📤 全部推送：直接发送邮件")
+                    formatted_content = self._format_email_notification("", sender, subject, email_content)
+                    self._send_notification("邮件通知", formatted_content, attachments, email_addr)
+
+            # 优先级2：验证码AI识别
+            elif is_verification:
                 logger.info(f"[{email_addr}] 🔐 识别为验证码邮件")
                 if self._ai_enabled:
                     logger.info(f"[{email_addr}] 🤖 启用AI识别，异步调用AI处理")
-                    # 使用线程池异步处理AI调用，避免阻塞邮件监控
                     self._handle_verification_email_async(subject, email_content, attachments, sender, email_addr)
                 else:
-                    logger.info(f"[{email_addr}] 🤖 AI识别未启用，直接发送邮件")
-                    # 统一格式：验证码邮件（未使用AI）
-                    formatted_content = self._format_email_notification(
-                        "", sender, subject, email_content
-                    )
+                    logger.info(f"[{email_addr}] 🤖 AI识别未启用，直接发送验证码邮件")
+                    formatted_content = self._format_email_notification("", sender, subject, email_content)
                     self._send_notification("邮件通知", formatted_content, attachments, email_addr)
+
+            # 优先级3：关键词识别
             else:
                 logger.debug(f"[{email_addr}] 🔍 检查关键词匹配...")
                 keywords = self._parse_keywords()
@@ -946,7 +987,7 @@ class yjj(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -964,7 +1005,7 @@ class yjj(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -982,7 +1023,7 @@ class yjj(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 4
+                                    'md': 3
                                 },
                                 'content': [
                                     {
@@ -995,9 +1036,28 @@ class yjj(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 3
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'push_all',
+                                            'label': '全部推送',
+                                            'hint': '推送所有接收到的邮件（优先级最高）',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
+
                     {
                         'component': 'VRow',
                         'content': [
@@ -1139,7 +1199,8 @@ class yjj(_PluginBase):
             "ai_url": self._ai_url,
             "ai_key": self._ai_key,
             "ai_model": self._ai_model,
-            "keywords": self._keywords
+            "keywords": self._keywords,
+            "push_all": self._push_all
         }
 
     def get_page(self) -> List[dict]:
@@ -1150,11 +1211,7 @@ class yjj(_PluginBase):
             email_configs = self._parse_email_configs()
             email_count = len(email_configs)
 
-            # 安全获取关键词数量
-            try:
-                keywords_count = len(self._parse_keywords())
-            except:
-                keywords_count = 0
+
 
             # 构建邮箱状态表格数据
             email_rows = []
@@ -1435,3 +1492,5 @@ class yjj(_PluginBase):
         """停止插件服务"""
         self.stop_monitoring()
         return True
+
+
