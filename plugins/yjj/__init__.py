@@ -22,6 +22,8 @@ from typing import Any, List, Dict, Tuple, Optional
 from email.header import decode_header
 import re
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
+import html
 
 from app.core.config import settings
 from app.plugins import _PluginBase
@@ -32,6 +34,79 @@ from app.schemas import NotificationType
 from .ai_handler import AIHandler
 
 
+class HTMLToTextParser(HTMLParser):
+    """HTML转纯文本解析器"""
+
+    def __init__(self):
+        super().__init__()
+        self.text_content = []
+        self.current_text = ""
+        self.skip_content = False  # 用于跳过不需要的内容
+
+    def handle_starttag(self, tag, attrs):
+        """处理开始标签"""
+        tag_lower = tag.lower()
+
+        # 跳过这些标签的内容
+        if tag_lower in ['style', 'script', 'head', 'meta', 'link']:
+            self.skip_content = True
+            return
+
+        # 对于块级元素，在前面添加换行
+        block_tags = ['p', 'div', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td']
+        if tag_lower in block_tags:
+            if self.current_text.strip():
+                self.text_content.append(self.current_text.strip())
+                self.current_text = ""
+
+    def handle_endtag(self, tag):
+        """处理结束标签"""
+        tag_lower = tag.lower()
+
+        # 结束跳过内容的标签
+        if tag_lower in ['style', 'script', 'head', 'meta', 'link']:
+            self.skip_content = False
+            return
+
+        # 对于块级元素，确保内容被添加
+        block_tags = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td']
+        if tag_lower in block_tags:
+            if self.current_text.strip():
+                self.text_content.append(self.current_text.strip())
+                self.current_text = ""
+        elif tag_lower == 'br':
+            # br标签直接添加换行
+            if self.current_text.strip():
+                self.text_content.append(self.current_text.strip())
+                self.current_text = ""
+
+    def handle_data(self, data):
+        """处理文本数据"""
+        # 如果在跳过模式，不处理数据
+        if self.skip_content:
+            return
+
+        # 清理文本数据，去除多余空白
+        cleaned_data = ' '.join(data.split())
+        if cleaned_data:
+            self.current_text += cleaned_data + " "
+
+    def get_text(self):
+        """获取解析后的纯文本"""
+        # 添加最后的文本内容
+        if self.current_text.strip():
+            self.text_content.append(self.current_text.strip())
+
+        # 合并所有文本，用换行符分隔
+        result = '\n'.join(self.text_content)
+
+        # 清理多余的空白和换行
+        result = re.sub(r'\n\s*\n+', '\n', result)  # 去除多余的空行
+        result = re.sub(r'[ \t]+', ' ', result)     # 合并多余的空格和制表符
+
+        return result.strip()
+
+
 class yjj(_PluginBase):
     # 插件名称
     plugin_name = "邮件集"
@@ -40,7 +115,7 @@ class yjj(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png"
     # 插件版本
-    plugin_version = "1.1.0"
+    plugin_version = "1.1.1"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -608,8 +683,20 @@ class yjj(_PluginBase):
                 for i, att in enumerate(attachments, 1):
                     logger.info(f"[{email_addr}]   附件{i}: {att['filename']} ({att['content_type']})")
 
-            # 组合邮件内容
-            email_content = text_content or html_content or ""
+            # 智能组合邮件内容
+            if text_content:
+                # 优先使用纯文本内容
+                email_content = text_content
+                logger.debug(f"[{email_addr}] 📄 使用纯文本内容 ({len(text_content)} 字符)")
+            elif html_content:
+                # 如果只有HTML内容，转换为纯文本
+                logger.debug(f"[{email_addr}] 🌐 检测到HTML内容，开始转换为纯文本...")
+                email_content = self._html_to_text(html_content)
+                logger.info(f"[{email_addr}] 🌐 HTML转纯文本完成 (原始: {len(html_content)} -> 转换后: {len(email_content)} 字符)")
+            else:
+                email_content = ""
+                logger.debug(f"[{email_addr}] 📄 邮件无文本内容")
+
             full_content = f"{subject}\n{email_content}"
 
             # 实现新的优先级逻辑：全部推送 > 验证码AI识别 > 关键词识别
@@ -745,6 +832,93 @@ class yjj(_PluginBase):
             logger.error(f"提取邮件内容失败: {str(e)}")
 
         return text_content, html_content, attachments
+
+    def _html_to_text(self, html_content: str) -> str:
+        """
+        将HTML内容转换为纯文本
+
+        Args:
+            html_content: HTML格式的邮件内容
+
+        Returns:
+            转换后的纯文本内容
+        """
+        if not html_content:
+            return ""
+
+        try:
+            # 预处理：移除一些不需要的标签和内容
+            processed_html = html_content
+
+            # 移除style标签及其内容
+            processed_html = re.sub(r'<style[^>]*>.*?</style>', '', processed_html, flags=re.DOTALL | re.IGNORECASE)
+
+            # 移除script标签及其内容
+            processed_html = re.sub(r'<script[^>]*>.*?</script>', '', processed_html, flags=re.DOTALL | re.IGNORECASE)
+
+            # 移除head标签及其内容
+            processed_html = re.sub(r'<head[^>]*>.*?</head>', '', processed_html, flags=re.DOTALL | re.IGNORECASE)
+
+            # 将一些标签转换为换行符
+            processed_html = re.sub(r'<br\s*/?>', '\n', processed_html, flags=re.IGNORECASE)
+            processed_html = re.sub(r'</p>', '\n', processed_html, flags=re.IGNORECASE)
+            processed_html = re.sub(r'</div>', '\n', processed_html, flags=re.IGNORECASE)
+
+            # 解码HTML实体字符
+            decoded_html = html.unescape(processed_html)
+
+            # 使用自定义HTML解析器转换为纯文本
+            parser = HTMLToTextParser()
+            parser.feed(decoded_html)
+            text_result = parser.get_text()
+
+            # 后处理：进一步清理文本
+            if text_result:
+                # 去除多余的空行（超过2个连续换行符的情况）
+                text_result = re.sub(r'\n{3,}', '\n\n', text_result)
+
+                # 去除每行开头和结尾的空白
+                lines = [line.strip() for line in text_result.split('\n')]
+
+                # 过滤掉空行，但保留段落间的分隔
+                cleaned_lines = []
+                prev_empty = False
+                for line in lines:
+                    if line:
+                        cleaned_lines.append(line)
+                        prev_empty = False
+                    elif not prev_empty and cleaned_lines:
+                        # 只在非连续空行且不是开头时添加空行
+                        cleaned_lines.append('')
+                        prev_empty = True
+
+                text_result = '\n'.join(cleaned_lines).strip()
+
+            logger.debug(f"HTML转文本成功，原长度: {len(html_content)}, 转换后长度: {len(text_result)}")
+            return text_result
+
+        except Exception as e:
+            logger.warning(f"HTML转文本失败: {str(e)}")
+            # 如果解析失败，使用简单的正则表达式去除标签
+            try:
+                # 先移除style和script内容
+                text_result = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+                text_result = re.sub(r'<script[^>]*>.*?</script>', '', text_result, flags=re.DOTALL | re.IGNORECASE)
+
+                # 去除HTML标签
+                text_result = re.sub(r'<[^>]+>', '', text_result)
+
+                # 解码HTML实体
+                text_result = html.unescape(text_result)
+
+                # 清理多余的空白
+                text_result = re.sub(r'\s+', ' ', text_result).strip()
+
+                logger.debug(f"使用备用方案转换HTML，结果长度: {len(text_result)}")
+                return text_result
+            except Exception as e2:
+                logger.error(f"HTML转文本备用方案也失败: {str(e2)}")
+                return html_content  # 最后返回原始内容
 
     def _is_image_file(self, filename):
         """检查是否为图片文件"""
