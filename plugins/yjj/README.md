@@ -85,10 +85,7 @@ test@163.com|qrstuvwxyz123456
 - 163邮箱 (imap.163.com)
 - 126邮箱 (imap.126.com)
 - Gmail (imap.gmail.com)
-- Outlook/Hotmail (outlook.office365.com)
-- Yahoo邮箱 (imap.mail.yahoo.com)
 - 新浪邮箱 (imap.sina.com)
-- 搜狐邮箱 (imap.sohu.com)
 
 ## 注意事项
 
