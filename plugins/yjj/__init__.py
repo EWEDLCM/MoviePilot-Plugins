@@ -985,7 +985,7 @@ class yjj(_PluginBase):
                                             'model': 'ai_url',
                                             'label': 'AI接口URL',
                                             'placeholder': 'https://api.openai.com/v1/chat/completions',
-                                            'hint': 'AI服务接口地址',
+                                            'hint': 'AI服务接口地址，输入/v1之前的根地址即可',
                                             'persistent-hint': True
                                         }
                                     }
