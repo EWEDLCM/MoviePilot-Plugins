@@ -53,56 +53,105 @@ class AIHandler:
     def get_verification_code(self, subject: str, content: str, attachments: list = None) -> Optional[str]:
         """
         从邮件内容中提取验证码信息
-        
+
         Args:
             subject: 邮件标题
             content: 邮件内容
             attachments: 附件列表
-            
+
         Returns:
             AI处理后的结果，如果失败返回None
         """
         try:
-            # 构建提示词
-            prompt = (
-                "我需要你从以下邮件内容中进行验证码提取，形成格式：\n"
-                "标题：接收到来自xx的验证码\n"
-                "内容：验证码是xxxxxx\n"
-                "请注意必须按此格式发送，不要添加其他任何内容，如果你认为内容中不包含验证码，请回复\"不包含验证码\"，"
-                "同样不要添加任何其他内容，以下是邮件内容：\n"
-                f"邮件标题：{subject}\n"
-                f"邮件内容：{content}"
+            # 检查是否有图片附件
+            has_images = attachments and any(
+                att.get('content_type', '').startswith('image/') and att.get('content')
+                for att in attachments
             )
-            
-            logger.info(f"[AI] 开始验证码识别，服务类型: {self.service_type}")
-            
+
+            if has_images:
+                logger.info(f"[AI] 检测到图片附件，启用图片验证码识别")
+                # 构建图片验证码提示词
+                prompt = (
+                    "请从邮件内容和图片中提取验证码信息，形成格式：\n"
+                    "标题：接收到来自xx的验证码\n"
+                    "内容：验证码是xxxxxx\n"
+                    "请注意：\n"
+                    "1. 如果图片中包含验证码，请优先识别图片中的验证码\n"
+                    "2. 如果文字内容中也有验证码，请一并提取\n"
+                    "3. 必须按上述格式回复，不要添加其他内容\n"
+                    "4. 如果都不包含验证码，请回复\"不包含验证码\"\n"
+                    f"邮件标题：{subject}\n"
+                    f"邮件内容：{content}"
+                )
+            else:
+                # 构建普通文本验证码提示词
+                prompt = (
+                    "我需要你从以下邮件内容中进行验证码提取，形成格式：\n"
+                    "标题：接收到来自xx的验证码\n"
+                    "内容：验证码是xxxxxx\n"
+                    "请注意必须按此格式发送，不要添加其他任何内容，如果你认为内容中不包含验证码，请回复\"不包含验证码\"，"
+                    "同样不要添加任何其他内容，以下是邮件内容：\n"
+                    f"邮件标题：{subject}\n"
+                    f"邮件内容：{content}"
+                )
+
+            logger.info(f"[AI] 开始验证码识别，服务类型: {self.service_type}，包含图片: {has_images}")
+
             # 根据服务类型调用相应的API
             if self.service_type == 'gemini':
-                return self._call_gemini_api(prompt)
+                return self._call_gemini_api(prompt, attachments)
             elif self.service_type == 'claude':
-                return self._call_claude_api(prompt)
+                return self._call_claude_api(prompt, attachments)
             else:
                 # OpenAI兼容格式（包括DeepSeek、OpenAI、智谱等）
-                return self._call_openai_compatible_api(prompt)
-                
+                return self._call_openai_compatible_api(prompt, attachments)
+
         except Exception as e:
             logger.error(f"[AI] 验证码识别异常: {str(e)}")
             return None
     
-    def _call_gemini_api(self, prompt: str) -> Optional[str]:
+    def _call_gemini_api(self, prompt: str, attachments: list = None) -> Optional[str]:
         """调用Gemini API"""
         try:
-            model_name = self.model or "gemini-pro"
+            # 检查是否有图片，选择合适的模型
+            has_images = attachments and any(
+                att.get('content_type', '').startswith('image/') and att.get('content')
+                for att in attachments
+            )
+
+            if has_images:
+                model_name = self.model or "gemini-1.5-flash"  # 支持图片的模型
+            else:
+                model_name = self.model or "gemini-pro"
+
             api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
-            
+
             headers = {'Content-Type': 'application/json'}
-            
+
+            # 构建内容部分
+            parts = [{"text": prompt}]
+
+            # 添加图片
+            if has_images:
+                for att in attachments:
+                    if att.get('content_type', '').startswith('image/') and att.get('content'):
+                        # 获取图片的MIME类型
+                        mime_type = att.get('content_type', 'image/jpeg')
+                        parts.append({
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": att['content']  # base64编码的图片数据
+                            }
+                        })
+                        logger.debug(f"[AI] 添加图片到Gemini请求: {att.get('filename', 'unknown')} ({mime_type})")
+
             data = {
                 "contents": [{
-                    "parts": [{"text": prompt}]
+                    "parts": parts
                 }],
                 "generationConfig": {
-                    "maxOutputTokens": 8192,  
+                    "maxOutputTokens": 8192,
                     "temperature": 0.1
                 }
             }
@@ -113,23 +162,43 @@ class AIHandler:
             logger.error(f"[AI] Gemini API调用异常: {str(e)}")
             return None
     
-    def _call_claude_api(self, prompt: str) -> Optional[str]:
+    def _call_claude_api(self, prompt: str, attachments: list = None) -> Optional[str]:
         """调用Claude API"""
         try:
             api_url = f"{self.api_url}/v1/messages"
-            
+
             headers = {
                 'x-api-key': self.api_key,
                 'Content-Type': 'application/json',
                 'anthropic-version': '2023-06-01'
             }
-            
+
+            # 构建消息内容
+            content = [{"type": "text", "text": prompt}]
+
+            # 添加图片
+            if attachments:
+                for att in attachments:
+                    if att.get('content_type', '').startswith('image/') and att.get('content'):
+                        # Claude支持的图片格式
+                        mime_type = att.get('content_type', 'image/jpeg')
+                        if mime_type in ['image/jpeg', 'image/png', 'image/gif', 'image/webp']:
+                            content.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": mime_type,
+                                    "data": att['content']
+                                }
+                            })
+                            logger.debug(f"[AI] 添加图片到Claude请求: {att.get('filename', 'unknown')} ({mime_type})")
+
             data = {
                 "model": self.model or "claude-3-sonnet-20240229",
                 "max_tokens": 500,
                 "temperature": 0.1,
                 "messages": [
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": content}
                 ]
             }
             
@@ -139,7 +208,7 @@ class AIHandler:
             logger.error(f"[AI] Claude API调用异常: {str(e)}")
             return None
     
-    def _call_openai_compatible_api(self, prompt: str) -> Optional[str]:
+    def _call_openai_compatible_api(self, prompt: str, attachments: list = None) -> Optional[str]:
         """调用OpenAI兼容的API"""
         try:
             # 构建完整的API URL
@@ -147,16 +216,38 @@ class AIHandler:
                 api_url = f"{self.api_url}/chat/completions"
             else:
                 api_url = f"{self.api_url}/v1/chat/completions"
-            
+
             headers = {
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json'
             }
-            
+
+            # 构建消息内容
+            content = [{"type": "text", "text": prompt}]
+
+            # 添加图片（仅对支持vision的模型）
+            if attachments and self.service_type in ['openai']:
+                for att in attachments:
+                    if att.get('content_type', '').startswith('image/') and att.get('content'):
+                        mime_type = att.get('content_type', 'image/jpeg')
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{att['content']}"
+                            }
+                        })
+                        logger.debug(f"[AI] 添加图片到OpenAI请求: {att.get('filename', 'unknown')} ({mime_type})")
+
+            # 如果有图片，使用支持vision的模型
+            model = self.model or "gpt-3.5-turbo"
+            if attachments and any(att.get('content_type', '').startswith('image/') for att in attachments):
+                if self.service_type == 'openai' and not model.startswith('gpt-4'):
+                    model = "gpt-4-vision-preview"  # 使用支持图片的模型
+
             data = {
-                "model": self.model or "gpt-3.5-turbo",
+                "model": model,
                 "messages": [
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": content if len(content) > 1 else prompt}
                 ],
                 "max_tokens": 500,
                 "temperature": 0.1

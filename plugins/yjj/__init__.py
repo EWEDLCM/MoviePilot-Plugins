@@ -587,11 +587,16 @@ class yjj(_PluginBase):
                             try:
                                 payload = part.get_payload(decode=True)
                                 if payload:
+                                    # 如果content_type为空或不是图片类型，根据文件扩展名推断
+                                    if not content_type or not content_type.startswith('image/'):
+                                        content_type = self._get_image_content_type(filename)
+
                                     attachments.append({
                                         'filename': filename,
                                         'content': base64.b64encode(payload).decode('utf-8'),
                                         'content_type': content_type
                                     })
+                                    logger.debug(f"图片附件: {filename} ({content_type})")
                             except Exception as e:
                                 logger.warning(f"处理附件失败: {filename}, {str(e)}")
                     elif content_type == "text/plain" and "attachment" not in content_disposition:
@@ -632,6 +637,22 @@ class yjj(_PluginBase):
         """检查是否为图片文件"""
         image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
         return any(filename.lower().endswith(ext) for ext in image_extensions)
+
+    def _get_image_content_type(self, filename):
+        """根据文件扩展名获取MIME类型"""
+        filename_lower = filename.lower()
+        if filename_lower.endswith(('.jpg', '.jpeg')):
+            return 'image/jpeg'
+        elif filename_lower.endswith('.png'):
+            return 'image/png'
+        elif filename_lower.endswith('.gif'):
+            return 'image/gif'
+        elif filename_lower.endswith('.bmp'):
+            return 'image/bmp'
+        elif filename_lower.endswith('.webp'):
+            return 'image/webp'
+        else:
+            return 'image/jpeg'  # 默认类型
 
     def _is_verification_email(self, content):
         """检查是否为验证码邮件"""
@@ -800,12 +821,18 @@ class yjj(_PluginBase):
                 attachment_count = 0
 
                 for attachment in attachments:
-                    if attachment.get('content_type', '').startswith('image/'):
+                    # 使用统一的图片判断逻辑：优先使用content_type，其次使用文件扩展名
+                    is_image = (
+                        attachment.get('content_type', '').startswith('image/') or
+                        self._is_image_file(attachment.get('filename', ''))
+                    )
+
+                    if is_image:
                         attachment_count += 1
                         attachment_title = f"{title} - 图片附件 {attachment_count}"
                         attachment_text = f"图片文件: {attachment['filename']}"
 
-                        logger.debug(f"[{email_addr}] 📢 发送附件 {attachment_count}: {attachment['filename']}")
+                        logger.debug(f"[{email_addr}] 📢 发送附件 {attachment_count}: {attachment['filename']} (content_type: {attachment.get('content_type', 'unknown')})")
 
                         # 这里简化处理，实际可能需要保存图片到临时文件
                         self.post_message(
@@ -958,7 +985,7 @@ class yjj(_PluginBase):
                                             'model': 'ai_url',
                                             'label': 'AI接口URL',
                                             'placeholder': 'https://api.openai.com/v1/chat/completions',
-                                            'hint': 'AI服务接口地址，输入/v1之前的根地址即可',
+                                            'hint': 'AI服务接口地址',
                                             'persistent-hint': True
                                         }
                                     }
