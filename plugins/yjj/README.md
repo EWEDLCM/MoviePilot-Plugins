@@ -95,7 +95,7 @@ test@163.com|qrstuvwxyz123456
 ### v1.0.1
 - 增加对图片验证码的识别
 - 修复AI判定无验证码后的原文推送
-
+- 修复163邮箱标识客户端
 ## 作者
 
 EWEDL - [GitHub](https://github.com/EWEDLCM)
