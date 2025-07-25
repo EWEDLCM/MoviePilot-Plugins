@@ -2,7 +2,8 @@
 
 ## **特别鸣谢**
 
-感谢 [**时也命也**](https://club.fnnas.com/home.php?mod=space&uid=1622) 大佬提供思路并参与测试
+感谢 [**时也命也**](https://club.fnnas.com/home.php?mod=space&uid=1622) 大佬提供思路和测试
+感谢 [**大胖（左右）**](https://club.fnnas.com/home.php?mod=space&uid=4598) 大佬的指点和测试
 
 ## 功能介绍
 
@@ -40,7 +41,7 @@ test@163.com|qrstuvwxyz123456
 
 **注意**：
 - 需要使用邮箱的授权码，不是登录密码
-- 支持的邮箱服务商：QQ、163、126、Gmail、Outlook等
+- 支持的邮箱服务商：QQ、163、126、Gmail、新浪 等
 
 ### AI配置
 
@@ -67,14 +68,11 @@ test@163.com|qrstuvwxyz123456
 4. **消息推送**：符合条件的邮件通过选定的通知渠道推送给用户
 
 ## 支持的邮箱服务商
-- QQ邮箱 (imap.qq.com) 【确认支持】
-- 163邮箱 (imap.163.com) 【确认支持】
-- 126邮箱 (imap.126.com) 【理论支持，没测试】
-- Gmail (imap.gmail.com) 【已经寄了，等待其他方式验证】
-- Outlook/Hotmail (outlook.office365.com) 【理论支持，没测试】
-- Yahoo邮箱 (imap.mail.yahoo.com) 【理论支持，没测试】
-- 新浪邮箱 (imap.sina.com) 【理论支持，没测试】
-- 搜狐邮箱 (imap.sohu.com) 【理论支持，没测试】
+- QQ邮箱 (imap.qq.com) 
+- 163邮箱 (imap.163.com)
+- 126邮箱 (imap.126.com) 
+- Gmail (imap.gmail.com) 
+- 新浪邮箱 (imap.sina.com)
 
 ## 注意事项
 
