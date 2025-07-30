@@ -50,7 +50,7 @@ class AIHandler:
             # 默认使用OpenAI兼容格式
             return 'openai_compatible'
     
-    def get_verification_code(self, subject: str, content: str, attachments: list = None) -> Optional[str]:
+    def get_verification_code(self, subject: str, content: str, attachments: list = None, custom_prompt: str = None) -> Optional[str]:
         """
         从邮件内容中提取验证码信息
 
@@ -58,6 +58,7 @@ class AIHandler:
             subject: 邮件标题
             content: 邮件内容
             attachments: 附件列表
+            custom_prompt: 自定义提示词
 
         Returns:
             AI处理后的结果，如果失败返回None
@@ -69,32 +70,36 @@ class AIHandler:
                 for att in attachments
             )
 
-            if has_images:
-                logger.info(f"[AI] 检测到图片附件，启用图片验证码识别")
-                # 构建图片验证码提示词
-                prompt = (
-                    "请从邮件内容和图片中提取验证码信息，形成格式：\n"
-                    "标题：接收到的标题\n"
-                    "内容：接收到的验证码\n"
-                    "请注意：\n"
-                    "1. 如果图片中包含验证码，请优先识别图片中的验证码\n"
-                    "2. 如果文字内容中也有验证码，请一并提取\n"
-                    "3. 必须按上述格式回复，不要添加其他内容\n"
-                    "4. 如果都不包含验证码，请回复\"不包含验证码\"\n"
-                    f"邮件标题：{subject}\n"
-                    f"邮件内容：{content}"
-                )
+            if custom_prompt:
+                # 用户自定义指令 + 固定的数据部分
+                instruction = custom_prompt
+                logger.info(f"[AI] 使用自定义验证码指令")
             else:
-                # 构建普通文本验证码提示词
-                prompt = (
-                    "我需要你从以下邮件内容中进行验证码提取，形成格式：\n"
-                    "标题：接收到的标题\n"
-                    "内容：接收到的验证码\n"
-                    "请注意必须按此格式发送，不要添加其他任何内容，如果你认为内容中不包含验证码，请回复\"不包含验证码\"，"
-                    "同样不要添加任何其他内容，以下是邮件内容：\n"
-                    f"邮件标题：{subject}\n"
-                    f"邮件内容：{content}"
-                )
+                # 默认指令
+                if has_images:
+                    logger.info(f"[AI] 检测到图片附件，使用默认图片验证码指令")
+                    instruction = (
+                        "请从邮件内容和图片中提取验证码信息，形成格式：\n"
+                        "标题：接收到的标题\n"
+                        "内容：接收到的验证码\n"
+                        "请注意：\n"
+                        "1. 如果图片中包含验证码，请优先识别图片中的验证码\n"
+                        "2. 如果文字内容中也有验证码，请一并提取\n"
+                        "3. 必须按上述格式回复，不要添加其他内容\n"
+                        "4. 如果都不包含验证码，请回复\"不包含验证码\""
+                    )
+                else:
+                    logger.info(f"[AI] 使用默认文本验证码指令")
+                    instruction = (
+                        "我需要你从以下邮件内容中进行验证码提取，形成格式：\n"
+                        "标题：接收到的标题\n"
+                        "内容：接收到的验证码\n"
+                        "请注意必须按此格式发送，不要添加其他任何内容，如果你认为内容中不包含验证码，请回复\"不包含验证码\"，"
+                        "同样不要添加任何其他内容。"
+                    )
+
+            # 组合最终的prompt
+            prompt = f"{instruction}\n形成格式：\n标题：处理后的标题\n内容：处理后的内容\n\n以下是邮件内容：\n邮件标题：{subject}\n邮件内容：{content}"
 
             logger.info(f"[AI] 开始验证码识别，服务类型: {self.service_type}，包含图片: {has_images}")
 
@@ -109,6 +114,50 @@ class AIHandler:
 
         except Exception as e:
             logger.error(f"[AI] 验证码识别异常: {str(e)}")
+            return None
+
+    def get_summary(self, subject: str, content: str, custom_prompt: str = None) -> Optional[str]:
+        """
+        使用AI提取邮件内容的概要
+
+        Args:
+            subject: 邮件标题
+            content: 邮件内容
+            custom_prompt: 自定义提示词
+
+        Returns:
+            AI处理后的概要，如果失败返回None
+        """
+        try:
+            if custom_prompt:
+                # 用户自定义指令
+                instruction = custom_prompt
+                logger.info(f"[AI] 使用自定义概要提取指令")
+            else:
+                # 默认指令
+                logger.info(f"[AI] 使用默认概要提取指令")
+                instruction = (
+                    "请帮我将以下邮件内容精简成一段摘要，保留关键信息和核心要点，去除不必要的客套话和格式化内容。\n"
+                    "请直接返回摘要内容，不要添加任何额外的标题或说明。\n"
+                    "如果邮件内容过短或本身就是摘要，请直接返回原文，如果标题和内容不为中文，也请翻译为中文。"
+                )
+
+            # 组合最终的prompt
+            prompt = f"{instruction}\n\n以下是邮件内容：\n邮件标题：{subject}\n邮件正文：\n{content}"
+
+            logger.info(f"[AI] 开始邮件概要提取，服务类型: {self.service_type}")
+
+            # 根据服务类型调用相应的API
+            # 注意：概要提取功能不处理图片，所以总是传递空的附件列表
+            if self.service_type == 'gemini':
+                return self._call_gemini_api(prompt, attachments=None)
+            elif self.service_type == 'claude':
+                return self._call_claude_api(prompt, attachments=None)
+            else:
+                return self._call_openai_compatible_api(prompt, attachments=None)
+
+        except Exception as e:
+            logger.error(f"[AI] 邮件概要提取异常: {str(e)}")
             return None
     
     def _call_gemini_api(self, prompt: str, attachments: list = None) -> Optional[str]:
@@ -241,8 +290,11 @@ class AIHandler:
             # 如果有图片，使用支持vision的模型
             model = self.model or "gpt-3.5-turbo"
             if attachments and any(att.get('content_type', '').startswith('image/') for att in attachments):
-                if self.service_type == 'openai' and not model.startswith('gpt-4'):
-                    model = "gpt-4-vision-preview"  # 使用支持图片的模型
+                # 仅在服务类型为openai且模型不是gpt-4系列时，才强制使用vision模型
+                # 这避免了在其他兼容服务或概要提取功能中错误地切换模型
+                if self.service_type == 'openai' and 'vision' not in model and 'gpt-4' not in model:
+                    model = "gpt-4-vision-preview"
+                    logger.info(f"[AI] 检测到图片附件，自动切换到视觉模型: {model}")
 
             data = {
                 "model": model,

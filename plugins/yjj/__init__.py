@@ -101,8 +101,8 @@ class HTMLToTextParser(HTMLParser):
         result = '\n'.join(self.text_content)
 
         # 清理多余的空白和换行
-        result = re.sub(r'\n\s*\n+', '\n', result)  # 去除多余的空行
-        result = re.sub(r'[ \t]+', ' ', result)     # 合并多余的空格和制表符
+        result = re.sub(r'\n\s*\n+', '\n', result)
+        result = re.sub(r'[ \t]+', ' ', result)
 
         return result.strip()
 
@@ -115,7 +115,7 @@ class yjj(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png"
     # 插件版本
-    plugin_version = "1.1.1"
+    plugin_version = "1.1.6"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -138,6 +138,9 @@ class yjj(_PluginBase):
     _ai_model = ""
     _keywords = ""
     _push_all = False  # 全部推送开关
+    _ai_summary_enabled = False  # AI概要提取开关
+    _verification_prompt = ""  # 验证码提示词
+    _summary_prompt = ""  # 概要提取提示词
     
     # 运行时属性
     _monitor_threads = []
@@ -174,10 +177,15 @@ class yjj(_PluginBase):
                 self._ai_model = config.get("ai_model", "")
                 self._keywords = config.get("keywords", "")
                 self._push_all = config.get("push_all", False)
+                self._ai_summary_enabled = config.get("ai_summary_enabled", False)
+                self._verification_prompt = config.get("verification_prompt", "")
+                self._summary_prompt = config.get("summary_prompt", "")
 
                 logger.info(f"[配置] 插件启用状态: {self._enabled}")
                 logger.info(f"[配置] 代理使用状态: {self._use_proxy}")
-                logger.info(f"[配置] AI识别状态: {self._ai_enabled}")
+                logger.info(f"[配置] 代理使用状态: {self._use_proxy}")
+                logger.info(f"[配置] AI验证码识别状态: {self._ai_enabled}")
+                logger.info(f"[配置] AI概要提取状态: {self._ai_summary_enabled}")
                 logger.info(f"[配置] 全部推送状态: {self._push_all}")
                 logger.info(f"[配置] 通知渠道: {self._msgtype or '默认'}")
 
@@ -713,9 +721,13 @@ class yjj(_PluginBase):
                 if is_verification and self._ai_enabled:
                     logger.info(f"[{email_addr}] 🔐 验证码邮件 + AI识别启用，走AI处理流程")
                     self._handle_verification_email_async(subject, email_content, attachments, sender, email_addr)
+                # 如果AI概要提取开启，则走概要提取流程
+                elif self._ai_summary_enabled and self._ai_enabled:
+                    logger.info(f"[{email_addr}] 📄 AI概要提取已启用，走AI概要流程")
+                    self._handle_summary_email_async(subject, email_content, sender, email_addr)
                 else:
                     # 直接推送所有邮件
-                    logger.info(f"[{email_addr}] 📤 全部推送：直接发送邮件")
+                    logger.info(f"[{email_addr}] 📤 全部推送：直接发送原始邮件")
                     formatted_content = self._format_email_notification("", sender, subject, email_content)
                     self._send_notification("邮件通知", formatted_content, attachments, email_addr)
 
@@ -738,7 +750,12 @@ class yjj(_PluginBase):
                     matched_keywords = [kw for kw in keywords if self._check_keywords(full_content, [kw])]
                     if matched_keywords:
                         logger.info(f"[{email_addr}] 🎯 关键词匹配成功: {', '.join(matched_keywords)}")
-                        self._send_keyword_email(subject, email_content, attachments, sender, email_addr)
+                        # 如果AI概要提取开启，则走概要提取流程
+                        if self._ai_summary_enabled and self._ai_enabled:
+                            logger.info(f"[{email_addr}] 📄 AI概要提取已启用，走AI概要流程")
+                            self._handle_summary_email_async(subject, email_content, sender, email_addr)
+                        else:
+                            self._send_keyword_email(subject, email_content, attachments, sender, email_addr)
                     else:
                         logger.debug(f"[{email_addr}] 🎯 关键词不匹配，跳过邮件")
                 else:
@@ -995,7 +1012,9 @@ class yjj(_PluginBase):
             )
 
             # 调用AI处理验证码
-            ai_response = ai_handler.get_verification_code(subject, content, attachments)
+            ai_response = ai_handler.get_verification_code(
+                subject, content, attachments, custom_prompt=self._verification_prompt
+            )
 
             if ai_response:
                 if "不包含验证码" not in ai_response:
@@ -1028,6 +1047,59 @@ class yjj(_PluginBase):
             logger.error(f"[{email_addr}] 🤖 [AI线程] ❌ AI处理验证码邮件异常: {str(e)}")
             # 失败时直接发送原邮件
             self._send_notification(f"邮件通知 - {subject}", content, attachments, email_addr)
+
+    def _handle_summary_email_async(self, subject, content, sender, email_addr):
+        """异步处理邮件概要提取"""
+        try:
+            logger.info(f"[{email_addr}] 📄 启动异步AI邮件概要提取")
+
+            if self._executor is None:
+                self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="AI-Worker")
+                logger.debug(f"[{email_addr}] 📄 创建AI线程池执行器")
+
+            self._executor.submit(
+                self._handle_summary_email_sync,
+                subject, content, sender, email_addr
+            )
+            logger.info(f"[{email_addr}] 📄 AI概要提取任务已提交到线程池")
+
+        except Exception as e:
+            logger.error(f"[{email_addr}] 📄 ❌ 异步AI概要提取启动失败: {str(e)}")
+            # 失败时直接发送原邮件
+            self._send_notification(f"邮件通知 - {subject}", content, [], email_addr)
+
+    def _handle_summary_email_sync(self, subject, content, sender, email_addr):
+        """同步处理邮件概要提取（在独立线程中运行）"""
+        try:
+            logger.info(f"[{email_addr}] 📄 [AI线程] 开始AI邮件概要提取")
+
+            proxy_url = self.get_proxy_host() if self._use_proxy else None
+            ai_handler = AIHandler(
+                api_url=self._ai_url,
+                api_key=self._ai_key,
+                model=self._ai_model,
+                proxy_url=proxy_url
+            )
+
+            ai_response = ai_handler.get_summary(
+                subject, content, custom_prompt=self._summary_prompt
+            )
+
+            if ai_response:
+                logger.info(f"[{email_addr}] 📄 [AI线程] ✅ AI概要提取成功")
+                logger.debug(f"[{email_addr}] 📄 [AI线程] AI响应: {ai_response}")
+                # 使用AI生成的概要作为内容
+                formatted_content = self._format_email_notification("", sender, subject, ai_response)
+                self._send_notification("邮件通知 (AI概要)", formatted_content, [], email_addr)
+            else:
+                logger.warning(f"[{email_addr}] 📄 [AI线程] ❌ AI概要提取失败，发送原邮件")
+                formatted_content = self._format_email_notification("", sender, subject, content)
+                self._send_notification("邮件通知", formatted_content, [], email_addr)
+
+        except Exception as e:
+            logger.error(f"[{email_addr}] 📄 [AI线程] ❌ AI处理邮件概要异常: {str(e)}")
+            # 失败时直接发送原邮件
+            self._send_notification(f"邮件通知 - {subject}", content, [], email_addr)
 
     def _send_keyword_email(self, subject, content, attachments, sender, email_addr):
         """发送关键词匹配的邮件"""
@@ -1161,7 +1233,7 @@ class yjj(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -1179,7 +1251,7 @@ class yjj(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -1197,7 +1269,7 @@ class yjj(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -1210,12 +1282,17 @@ class yjj(_PluginBase):
                                         }
                                     }
                                 ]
-                            },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
                             {
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -1228,10 +1305,27 @@ class yjj(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'ai_summary_enabled',
+                                            'label': 'AI概要提取',
+                                            'hint': '使用AI精简邮件内容后推送',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     },
-
                     {
                         'component': 'VRow',
                         'content': [
@@ -1355,7 +1449,94 @@ class yjj(_PluginBase):
                                             'placeholder': 'example@qq.com|授权码\nexample@163.com|授权码',
                                             'hint': '每行一个邮箱，格式为：邮箱地址|授权码',
                                             'persistent-hint': True,
-                                            'rows': 6
+                                            'rows': 3
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextarea',
+                                        'props': {
+                                            'model': 'verification_prompt',
+                                            'label': '验证码提示词 (可选)',
+                                            'placeholder': '留空则使用默认提示词。建议不填写采用默认，因为默认配置包含了图片验证码识别。',
+                                            'hint': '自定义提取验证码的提示词。',
+                                            'persistent-hint': True,
+                                            'rows': 3
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextarea',
+                                        'props': {
+                                            'model': 'summary_prompt',
+                                            'label': '概要提取提示词 (可选)',
+                                            'placeholder': '留空则使用默认提示词，建议不填写采用默认。',
+                                            'hint': '自定义提取邮件概要的提示词。',
+                                            'persistent-hint': True,
+                                            'rows': 3
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '直接输入提示词即可，系统会自行补充邮件内容'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'warning',
+                                            'variant': 'tonal',
+                                            'text': '在开启状态下修改配置时，请务必手动点击插件开关并保存进行一次重启而不是直接点击保存，以避免线程释放出错！'
                                         }
                                     }
                                 ]
@@ -1374,7 +1555,10 @@ class yjj(_PluginBase):
             "ai_key": self._ai_key,
             "ai_model": self._ai_model,
             "keywords": self._keywords,
-            "push_all": self._push_all
+            "push_all": self._push_all,
+            "ai_summary_enabled": self._ai_summary_enabled,
+            "verification_prompt": self._verification_prompt,
+            "summary_prompt": self._summary_prompt
         }
 
     def get_page(self) -> List[dict]:
@@ -1384,8 +1568,6 @@ class yjj(_PluginBase):
             status = "运行中" if self._running else "已停止"
             email_configs = self._parse_email_configs()
             email_count = len(email_configs)
-
-
 
             # 构建邮箱状态表格数据
             email_rows = []
@@ -1473,7 +1655,7 @@ class yjj(_PluginBase):
                         'component': 'VCol',
                         'props': {
                             'cols': 12,
-                            'md': 4
+                            'md': 3
                         },
                         'content': [
                             {
@@ -1514,7 +1696,7 @@ class yjj(_PluginBase):
                         'component': 'VCol',
                         'props': {
                             'cols': 12,
-                            'md': 4
+                            'md': 3
                         },
                         'content': [
                             {
@@ -1555,7 +1737,7 @@ class yjj(_PluginBase):
                         'component': 'VCol',
                         'props': {
                             'cols': 12,
-                            'md': 4
+                            'md': 3
                         },
                         'content': [
                             {
@@ -1584,7 +1766,48 @@ class yjj(_PluginBase):
                                                 'props': {
                                                     'class': 'text-body-2'
                                                 },
-                                                'text': 'AI识别'
+                                                'text': 'AI验证码'
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {
+                            'cols': 12,
+                            'md': 3
+                        },
+                        'content': [
+                            {
+                                'component': 'VCard',
+                                'props': {
+                                    'variant': 'tonal',
+                                    'color': 'info' if self._ai_summary_enabled else 'surface-variant',
+                                    'class': 'pa-3'
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'text-center'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'div',
+                                                'props': {
+                                                    'class': 'text-h5 font-weight-bold'
+                                                },
+                                                'text': '已启用' if self._ai_summary_enabled else '已禁用'
+                                            },
+                                            {
+                                                'component': 'div',
+                                                'props': {
+                                                    'class': 'text-body-2'
+                                                },
+                                                'text': 'AI概要'
                                             }
                                         ]
                                     }
@@ -1666,5 +1889,3 @@ class yjj(_PluginBase):
         """停止插件服务"""
         self.stop_monitoring()
         return True
-
-
