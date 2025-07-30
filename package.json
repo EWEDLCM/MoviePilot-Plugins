@@ -44,13 +44,13 @@
     "name": "邮件集",
     "description": "实时监控邮箱，支持验证码AI识别和关键词过滤，自动推送重要邮件",
     "labels": "邮件,推送,AI",
-    "version": "1.1.1",
+    "version": "1.1.6",
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png",
     "author": "EWEDL",
     "level": 2,
     "v2": true,
     "history": {
-      "v1.1.1": "优化对html类型邮件的处理"
+      "v1.1.6": "优化设置页面排版布局，优化默认提示词，新增ai概要整理功能，对非验证邮件生效，新增自定义识别词设置，但不建议使用，除非你对默认提示词不满意"
     }
   }
 } 
