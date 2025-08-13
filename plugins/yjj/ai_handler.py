@@ -73,11 +73,11 @@ class AIHandler:
             if custom_prompt:
                 # 用户自定义指令 + 固定的数据部分
                 instruction = custom_prompt
-                logger.info(f"[AI] 使用自定义验证码指令")
+                logger.info(f"[AI] 使用自定义验证码提示词")
             else:
                 # 默认指令
                 if has_images:
-                    logger.info(f"[AI] 检测到图片附件，使用默认图片验证码指令")
+                    logger.info(f"[AI] 检测到图片附件，使用默认验证码提示词")
                     instruction = (
                         "请从邮件内容和图片中提取验证码信息，形成格式：\n"
                         "标题：接收到的标题\n"
@@ -89,7 +89,7 @@ class AIHandler:
                         "4. 如果都不包含验证码，请回复\"不包含验证码\""
                     )
                 else:
-                    logger.info(f"[AI] 使用默认文本验证码指令")
+                    logger.info(f"[AI] 使用默认验证码提示词")
                     instruction = (
                         "我需要你从以下邮件内容中进行验证码提取，形成格式：\n"
                         "标题：接收到的标题\n"
@@ -132,14 +132,14 @@ class AIHandler:
             if custom_prompt:
                 # 用户自定义指令
                 instruction = custom_prompt
-                logger.info(f"[AI] 使用自定义概要提取指令")
+                logger.info(f"[AI] 使用自定义概要提示词")
             else:
                 # 默认指令
-                logger.info(f"[AI] 使用默认概要提取指令")
+                logger.info(f"[AI] 使用默认概要提示词")
                 instruction = (
-                    "请帮我将以下邮件内容精简成一段摘要，保留关键信息和核心要点，去除不必要的客套话和格式化内容。\n"
-                    "请直接返回摘要内容，不要添加任何额外的标题或说明。\n"
-                    "如果邮件内容过短或本身就是摘要，请直接返回原文，如果标题和内容不为中文，也请翻译为中文。"
+                    "请帮我将以下邮件内容精简成一段摘要，保留关键信息和核心要点，去除不必要的客套话和格式化内容，请注意尽可能紧凑，减少空行使用纯文本模式进行排版，注意美观。\n"
+                    "请直接返回摘要和重要内容，不要添加任何额外的标题或说明。\n"
+                    "如果内容不为中文，请全部翻译为中文。"
                 )
 
             # 组合最终的prompt

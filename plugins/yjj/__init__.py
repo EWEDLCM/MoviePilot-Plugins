@@ -1,6 +1,6 @@
 """
 邮件集插件
-版本: 1.1.0
+版本: 1.1.8
 作者: EWEDL
 功能:
 - 使用IMAP协议实时监控邮箱
@@ -115,7 +115,7 @@ class yjj(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/yjj.png"
     # 插件版本
-    plugin_version = "1.1.6"
+    plugin_version = "1.1.8"
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -162,7 +162,7 @@ class yjj(_PluginBase):
         self.stop_monitoring()
 
         logger.info("=" * 60)
-        logger.info("邮件集插件 (yjj) v1.1.0 - 初始化开始")
+        logger.info("邮件集插件 (yjj) v1.1.8 - 初始化开始")
         logger.info("=" * 60)
 
         try:
@@ -1033,10 +1033,14 @@ class yjj(_PluginBase):
                     notification_title, formatted_content = self._format_ai_notification(sender, ai_title, ai_content)
                     self._send_notification(notification_title, formatted_content, [], email_addr)
                 else:
-                    # AI认为不包含验证码，直接发送原邮件
-                    logger.info(f"[{email_addr}] 🤖 [AI线程] ❌ AI判断不包含验证码，发送原邮件")
-                    formatted_content = self._format_email_notification("", sender, subject, content)
-                    self._send_notification("邮件通知", formatted_content, attachments, email_addr)
+                    # AI认为不包含验证码
+                    if self._ai_summary_enabled and self._ai_enabled: # 新增：检查AI概要提取是否启用
+                        logger.info(f"[{email_addr}] 🤖 [AI线程] AI判断不包含验证码，但AI概要提取已启用，转入概要提取流程")
+                        self._handle_summary_email_async(subject, content, sender, email_addr)
+                    else:
+                        logger.info(f"[{email_addr}] 🤖 [AI线程] ❌ AI判断不包含验证码，发送原邮件")
+                        formatted_content = self._format_email_notification("", sender, subject, content)
+                        self._send_notification("邮件通知", formatted_content, attachments, email_addr)
             else:
                 # AI调用失败，直接发送原邮件
                 logger.warning(f"[{email_addr}] 🤖 [AI线程] ❌ AI调用失败，发送原邮件")
