@@ -36,7 +36,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
-    author_url = "https://github.com/EWEDLCM/MoviePilot-Plugins"
+    author_url = "https://github.com/EWEDLCM/"
     # 插件配置项ID前缀
     plugin_config_prefix = "fnmvscheduler_"
     # 加载顺序
