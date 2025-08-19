@@ -10,7 +10,7 @@
 | [代理地址测试](./plugins/proxytest/README.md) | 测试容器内的HTTP代理设置，并尝试使用代理连接外网 | 1.1.1 |
 | [插件代理控制器](./plugins/proxycontroller/README.md) |用于控制其他插件是否使用 PROXY_HOST 代理 | 1.6.2 |
 | [邮件集](./plugins/yjj/README.md) |实时监控邮箱，支持验证码AI识别和关键词过滤，按需推送重要邮件| 1.1.8 |
-| [飞牛影视调度器](./plugins/fnmvscheduler/README.md) |智能调度飞牛媒体服务器的媒体库扫描| 1.2.2 |
+| [飞牛影视调度器](./plugins/fnmvscheduler/README.md) |智能调度飞牛媒体服务器的媒体库扫描| 1.2.3 |
 ## 安装插件
 
 1. 在MoviePilot -> 设置 -> 插件 中，添加第三方插件仓库：`https://github.com/EWEDLCM/MoviePilot-Plugins`
