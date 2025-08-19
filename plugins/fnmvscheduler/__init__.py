@@ -28,11 +28,11 @@ class Fnmvscheduler(_PluginBase):
     # 插件名称
     plugin_name = "飞牛影视调度器"
     # 插件描述
-    plugin_desc = "根据平台整理通告，按设置的模式智能触发飞牛影视媒体库扫描。"
+    plugin_desc = "智能调度飞牛媒体服务器的媒体库扫描。监听文件转移事件，提供本地和网盘两种模式，网盘模式包含防抖、冲突检测和静默等待等逻辑，避免无效扫描。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "1.2.2" 
+    plugin_version = "1.2.3" 
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -528,3 +528,4 @@ class Fnmvscheduler(_PluginBase):
         except Exception as e:
 
             logger.debug(f"【飞牛影视调度器】注销事件监听器时出错（可能已被注销）: {e}")
+
