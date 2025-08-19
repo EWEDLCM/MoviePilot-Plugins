@@ -32,7 +32,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "1.2.3" 
+    plugin_version = "1.2.4" 
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -53,8 +53,12 @@ class Fnmvscheduler(_PluginBase):
     _mediaserver_helper: Optional[MediaServerHelper] = None
     _scan_lock = threading.Lock()
     _task_scheduler: Optional[BackgroundScheduler] = None
+    def __init__(self):
+        super().__init__()
+        logger.debug("【飞牛影视调度器】Fnmvscheduler 类 __init__ 方法被调用。")
 
     def init_plugin(self, config: dict = None):
+        logger.debug("【飞牛影视调度器】init_plugin 方法被调用。")
         self.stop_service()  # Ensure a clean state on re-initialization
         if config:
             self._enabled = config.get("enabled", False)
