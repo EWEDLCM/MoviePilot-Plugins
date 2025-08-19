@@ -40,7 +40,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件配置项ID前缀
     plugin_config_prefix = "fnmvscheduler_"
     # 加载顺序
-    plugin_order = 100
+    plugin_order = 1
     # 可使用的用户级别
     auth_level = 1
 
@@ -527,3 +527,4 @@ class Fnmvscheduler(_PluginBase):
             eventmanager.remove_event_listener(EventType.TransferComplete, self.handle_transfer_complete)
         except Exception as e:
             logger.debug(f"【飞牛影视调度器】注销事件监听器时出错（可能已被注销）: {e}")
+
