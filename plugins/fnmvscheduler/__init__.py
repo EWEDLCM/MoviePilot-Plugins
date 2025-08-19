@@ -55,6 +55,7 @@ class Fnmvscheduler(_PluginBase):
     _task_scheduler: Optional[BackgroundScheduler] = None
 
     def init_plugin(self, config: dict = None):
+        self.stop_service()  # Ensure a clean state on re-initialization
         if config:
             self._enabled = config.get("enabled", False)
             self._run_once = config.get("run_once", False)
@@ -62,12 +63,22 @@ class Fnmvscheduler(_PluginBase):
             self._check_tasks_once = config.get("check_tasks_once", False)
             self._selected_mediaservers = config.get("selected_mediaservers", [])
 
-        self._mediaserver_helper = MediaServerHelper()
+        try:
+            self._mediaserver_helper = MediaServerHelper()
+        except Exception as e:
+            logger.error(f"【飞牛影视调度器】MediaServerHelper 初始化失败: {e}", exc_info=True)
+            self._enabled = False
+            return
 
-        if not self._task_scheduler or not self._task_scheduler.running:
-            self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
-            self._task_scheduler.start()
-            logger.info("【飞牛影视调度器】任务调度器已启动。")
+        try:
+            if not self._task_scheduler or not self._task_scheduler.running:
+                self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
+                self._task_scheduler.start()
+                logger.info("【飞牛影视调度器】任务调度器已启动。")
+        except Exception as e:
+            logger.error(f"【飞牛影视调度器】任务调度器启动失败: {e}", exc_info=True)
+            self._enabled = False
+            return
 
         if self._enabled and self._run_once:
             logger.info("【飞牛影视调度器】检测到 '运行一次' 选项已勾选...")
@@ -77,14 +88,20 @@ class Fnmvscheduler(_PluginBase):
                 trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=3)),
                 name="Log Media Libraries Once"
             )
-            run_once_scheduler.start()
+            try:
+                run_once_scheduler.start()
+            except Exception as e:
+                logger.error(f"【飞牛影视调度器】'运行一次' 调度器启动失败: {e}", exc_info=True)
 
         if self._enabled and self._check_tasks_once:
             logger.info("【飞牛影视调度器】检测到 '扫描任务检测' 选项已勾选，准备执行一次性任务检查...")
-            self._task_scheduler.add_job(
-                func=self._execute_check_and_reset,
-                name="Check Running Tasks Once"
-            )
+            try:
+                self._task_scheduler.add_job(
+                    func=self._execute_check_and_reset,
+                    name="Check Running Tasks Once"
+                )
+            except Exception as e:
+                logger.error(f"【飞牛影视调度器】添加 '扫描任务检测' 任务失败: {e}", exc_info=True)
 
     def _execute_check_and_reset(self):
         """
@@ -526,6 +543,4 @@ class Fnmvscheduler(_PluginBase):
             from app.core.event import eventmanager
             eventmanager.remove_event_listener(EventType.TransferComplete, self.handle_transfer_complete)
         except Exception as e:
-
             logger.debug(f"【飞牛影视调度器】注销事件监听器时出错（可能已被注销）: {e}")
-
