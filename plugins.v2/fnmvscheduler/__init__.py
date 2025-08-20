@@ -32,7 +32,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "1.0.9"
+    plugin_version = "1.2.3"  # 版本号更新，代表修复了加载问题
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -51,6 +51,7 @@ class Fnmvscheduler(_PluginBase):
     _check_tasks_once = False
     _selected_mediaservers: List[str] = []
     _scan_lock = threading.Lock()
+    # 【修改点1】: 恢复插件自己的调度器实例，但设为 Optional
     _task_scheduler: Optional[BackgroundScheduler] = None
 
     def init_plugin(self, config: dict = None):
@@ -61,10 +62,10 @@ class Fnmvscheduler(_PluginBase):
             self._check_tasks_once = config.get("check_tasks_once", False)
             self._selected_mediaservers = config.get("selected_mediaservers", [])
 
-        # 初始化调度器但不立即启动，将采用"懒加载"模式在需要时再启动
+        # 【修改点2】: 在初始化时创建调度器实例，但 **不启动** 它
         self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
 
-        # "立即运行一次"相关功能使用临时的调度器，运行后即销毁，以确保在线安装的兼容性
+        # “立即运行”功能使用临时的、一次性的调度器，这种方式是安全的，予以保留
         if self._enabled and self._run_once:
             logger.info("【飞牛影视调度器】检测到 '运行一次' 选项已勾选...")
             run_once_scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -77,6 +78,7 @@ class Fnmvscheduler(_PluginBase):
 
         if self._enabled and self._check_tasks_once:
             logger.info("【飞牛影视调度器】检测到 '扫描任务检测' 选项已勾选，准备执行一次性任务检查...")
+            # 同样使用临时调度器来确保安全
             check_scheduler = BackgroundScheduler(timezone=settings.TZ)
             check_scheduler.add_job(
                 func=self._execute_check_and_reset,
@@ -87,7 +89,7 @@ class Fnmvscheduler(_PluginBase):
 
     def _ensure_scheduler_running(self):
         """
-        一个辅助方法，确保调度器在需要时已经启动 (懒加载)。
+        一个辅助方法，确保调度器在需要时已经启动。
         """
         if self._task_scheduler and not self._task_scheduler.running:
             self._task_scheduler.start()
@@ -201,6 +203,7 @@ class Fnmvscheduler(_PluginBase):
     def handle_transfer_complete(self, event: Event):
         if not self._enabled: return
         
+        # 【修改点3】: "懒加载" - 在事件入口处确保调度器已启动
         self._ensure_scheduler_running()
         
         if not self._scan_lock.acquire(blocking=False):
@@ -249,6 +252,7 @@ class Fnmvscheduler(_PluginBase):
     def _handle_local_scan_request(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
         logger.info(f"【飞牛影视调度器-本地模式】媒体库 '{lib.name}' 收到扫描请求，立即执行。")
         job_id = f"immediate_scan_{lib.id}_{datetime.now().timestamp()}"
+        # 【修改点4】: 所有调度调用都改回 self._task_scheduler
         self._task_scheduler.add_job(self._execute_scan, args=[lib, feiniu_config], id=job_id, name=f"Immediate Scan for {lib.name}")
     
     def _handle_cloud_scan_request(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
@@ -394,10 +398,8 @@ class Fnmvscheduler(_PluginBase):
         return form_config, default_values
 
     def stop_service(self):
-        """
-        退出插件时停止服务，并注销相关资源。
-        """
-        # 关闭内部调度器，释放资源
+        """退出插件时停止所有调度器"""
+        # 【修改点5】: 恢复 stop_service 的功能，以关闭内部调度器
         if self._task_scheduler and self._task_scheduler.running:
             self._task_scheduler.shutdown(wait=False)
             logger.info("【飞牛影视调度器】内部任务调度器已停止。")
@@ -409,4 +411,3 @@ class Fnmvscheduler(_PluginBase):
         
         logger.info("【飞牛影视调度器】插件已停用。")
         return True
-
