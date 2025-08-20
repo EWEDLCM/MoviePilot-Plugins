@@ -4,11 +4,14 @@ import threading
 from typing import Any, List, Dict, Tuple, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
+import pytz
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.jobstores.base import JobLookupError
 
+# 【修改点1】: 导入 MoviePilot 的全局调度器
+from app.schedule import scheduler
 from app.core.config import settings
 from app.core.event import eventmanager, Event
 from app.helper.mediaserver import MediaServerHelper
@@ -32,7 +35,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "1.2.1" 
+    plugin_version = "1.0.1"  # 版本号+0.0.1以示区别
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -50,9 +53,8 @@ class Fnmvscheduler(_PluginBase):
     _cloud_drive_mode = False
     _check_tasks_once = False
     _selected_mediaservers: List[str] = []
-    _mediaserver_helper: Optional[MediaServerHelper] = None
     _scan_lock = threading.Lock()
-    _task_scheduler: Optional[BackgroundScheduler] = None
+    # 【修改点2】: 移除了自定义的 _task_scheduler 属性
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -62,15 +64,14 @@ class Fnmvscheduler(_PluginBase):
             self._check_tasks_once = config.get("check_tasks_once", False)
             self._selected_mediaservers = config.get("selected_mediaservers", [])
 
-        self._mediaserver_helper = MediaServerHelper()
-
-        if not self._task_scheduler or not self._task_scheduler.running:
-            self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
-            self._task_scheduler.start()
-            logger.info("【飞牛影视调度器】任务调度器已启动。")
+        # 【修改点3】: 移除了 self._mediaserver_helper 的初始化
+        
+        # 【修改点4】: 移除了内部调度器的启动逻辑
+        # logger.info("【飞牛影视调度器】插件已初始化，等待事件触发。")
 
         if self._enabled and self._run_once:
             logger.info("【飞牛影视调度器】检测到 '运行一次' 选项已勾选...")
+            # 注意：这种用于“立即运行”的临时调度器是安全的，因为它运行完即销毁
             run_once_scheduler = BackgroundScheduler(timezone=settings.TZ)
             run_once_scheduler.add_job(
                 func=self._execute_and_reset,
@@ -79,11 +80,16 @@ class Fnmvscheduler(_PluginBase):
             )
             run_once_scheduler.start()
 
+        # 【修改点5】: 修改“扫描任务检测”的触发方式，使用全局调度器
         if self._enabled and self._check_tasks_once:
-            logger.info("【飞牛影视调度器】检测到 '扫描任务检测' 选项已勾选，准备执行一次性任务检查...")
-            self._task_scheduler.add_job(
+            logger.info("【飞牛影视调度器】检测到 '扫描任务检测' 选项已勾选，3秒后将执行一次性任务检查...")
+            scheduler.add_job(
                 func=self._execute_check_and_reset,
-                name="Check Running Tasks Once"
+                trigger='date',
+                run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                id="fnmvscheduler_check_tasks_once",
+                name="Check Running Tasks Once",
+                replace_existing=True
             )
 
     def _execute_check_and_reset(self):
@@ -92,7 +98,9 @@ class Fnmvscheduler(_PluginBase):
         """
         try:
             logger.info("【飞牛影视调度器】开始检查所有已配置飞牛服务器的正在运行任务...")
-            all_configs = self._mediaserver_helper.get_configs()
+            # 【修改点6】: 在方法内部实例化 MediaServerHelper
+            mediaserver_helper = MediaServerHelper()
+            all_configs = mediaserver_helper.get_configs()
             
             checked_any = False
             for config in all_configs.values():
@@ -230,9 +238,10 @@ class Fnmvscheduler(_PluginBase):
             category_path = os.path.dirname(series_parent_path)
             if not category_path.endswith(os.sep): category_path += os.sep
 
-            _mediaserver_helper = self._mediaserver_helper
-            all_services = _mediaserver_helper.get_services()
-            all_configs = _mediaserver_helper.get_configs()
+            # 【修改点6】: 在方法内部实例化 MediaServerHelper
+            mediaserver_helper = MediaServerHelper()
+            all_services = mediaserver_helper.get_services()
+            all_configs = mediaserver_helper.get_configs()
             if not all_services: return
 
             for name, service_info in all_services.items():
@@ -258,7 +267,8 @@ class Fnmvscheduler(_PluginBase):
         """处理本地模式下的扫描请求，立即执行。"""
         logger.info(f"【飞牛影视调度器-本地模式】媒体库 '{lib.name}' 收到扫描请求，立即执行。")
         job_id = f"immediate_scan_{lib.id}_{datetime.now().timestamp()}"
-        self._task_scheduler.add_job(self._execute_scan, args=[lib, feiniu_config], id=job_id, name=f"Immediate Scan for {lib.name}")
+        # 【修改点7】: 使用全局 scheduler
+        scheduler.add_job(self._execute_scan, args=[lib, feiniu_config], id=job_id, name=f"Immediate Scan for {lib.name}")
     
     def _handle_cloud_scan_request(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
         """
@@ -270,15 +280,17 @@ class Fnmvscheduler(_PluginBase):
 
         # 检查并取消后续任务，实现逻辑中断
         try:
-            if self._task_scheduler.get_job(retry_job_id):
-                self._task_scheduler.remove_job(retry_job_id)
+            # 【修改点7】: 使用全局 scheduler
+            if scheduler.get_job(retry_job_id):
+                scheduler.remove_job(retry_job_id)
                 logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 收到新事件，中断了正在进行的3分钟重试检查。")
         except JobLookupError:
             pass
         
         try:
-            if self._task_scheduler.get_job(final_scan_job_id):
-                self._task_scheduler.remove_job(final_scan_job_id)
+            # 【修改点7】: 使用全局 scheduler
+            if scheduler.get_job(final_scan_job_id):
+                scheduler.remove_job(final_scan_job_id)
                 logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 收到新事件，中断了正在进行的10分钟静默等待。")
         except JobLookupError:
             pass
@@ -287,12 +299,13 @@ class Fnmvscheduler(_PluginBase):
         debounce_job_id = f"debounce_scan_{lib.id}"
         run_time = datetime.now() + timedelta(minutes=5)
         
-        if self._task_scheduler.get_job(debounce_job_id):
-            self._task_scheduler.reschedule_job(debounce_job_id, trigger='date', run_date=run_time)
+        # 【修改点7】: 使用全局 scheduler
+        if scheduler.get_job(debounce_job_id):
+            scheduler.reschedule_job(debounce_job_id, trigger='date', run_date=run_time)
             logger.info(f"【飞牛影视调度器-网盘模式】检测到媒体库 '{lib.name}' 的新请求，重置5分钟防抖计时器。")
         else:
             logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 收到扫描请求，启动5分钟防抖等待。")
-            self._task_scheduler.add_job(
+            scheduler.add_job(
                 self._after_debounce_check, 'date', run_date=run_time, 
                 args=[lib, feiniu_config], 
                 id=debounce_job_id, name=f"Debounce Check for {lib.name}", 
@@ -327,7 +340,8 @@ class Fnmvscheduler(_PluginBase):
         if is_scanning:
             logger.info(f"【飞牛影视调度器-网盘模式】检测到媒体库 '{lib.name}' 正在扫描中。启动3分钟后的重试检查。")
             retry_job_id = f"retry_check_{lib.id}"
-            self._task_scheduler.add_job(
+            # 【修改点7】: 使用全局 scheduler
+            scheduler.add_job(
                 self._retry_check_loop, 'date', run_date=datetime.now() + timedelta(minutes=3), 
                 args=[lib, feiniu_config], 
                 id=retry_job_id, name=f"Retry Check for {lib.name}", 
@@ -366,7 +380,8 @@ class Fnmvscheduler(_PluginBase):
         if is_scanning:
             logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 仍在扫描中。将在3分钟后再次检查。")
             retry_job_id = f"retry_check_{lib.id}"
-            self._task_scheduler.add_job(
+            # 【修改点7】: 使用全局 scheduler
+            scheduler.add_job(
                 self._retry_check_loop, 'date', run_date=datetime.now() + timedelta(minutes=3), 
                 args=[lib, feiniu_config], 
                 id=retry_job_id, name=f"Retry Check for {lib.name}", 
@@ -375,7 +390,8 @@ class Fnmvscheduler(_PluginBase):
         else:
             logger.info(f"【飞牛影视调度器-网盘模式】确认媒体库 '{lib.name}' 的扫描任务已结束。开始10分钟的静默等待期。")
             final_scan_job_id = f"final_scan_{lib.id}"
-            self._task_scheduler.add_job(
+            # 【修改点7】: 使用全局 scheduler
+            scheduler.add_job(
                 self._execute_scan, 'date', run_date=datetime.now() + timedelta(minutes=10), 
                 args=[lib, feiniu_config], 
                 id=final_scan_job_id, name=f"Final Scan for {lib.name}", 
@@ -411,12 +427,13 @@ class Fnmvscheduler(_PluginBase):
         获取并记录媒体库信息 (此为 "运行一次" 功能的完整实现)
         """
         logger.info("【飞牛影视调度器】开始获取媒体库信息...")
-        _mediaserver_helper = self._mediaserver_helper
-        if not _mediaserver_helper:
+        # 【修改点6】: 在方法内部实例化 MediaServerHelper
+        mediaserver_helper = MediaServerHelper()
+        if not mediaserver_helper:
             logger.error("【飞牛影视调度器】MediaServerHelper 未初始化。无法获取媒体库信息。")
             return
         
-        all_services: Optional[Dict[str, ServiceInfo]] = _mediaserver_helper.get_services()
+        all_services: Optional[Dict[str, ServiceInfo]] = mediaserver_helper.get_services()
 
         if not all_services:
             logger.warning("【飞牛影视调度器】未找到任何配置的媒体服务器。")
@@ -465,8 +482,8 @@ class Fnmvscheduler(_PluginBase):
         pass
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        _mediaserver_helper = MediaServerHelper()
-        all_services_configs = _mediaserver_helper.get_configs()
+        mediaserver_helper = MediaServerHelper()
+        all_services_configs = mediaserver_helper.get_configs()
         select_items = [{"title": config.name, "value": config.name} for config in all_services_configs.values()]
 
         form_config = [
@@ -503,11 +520,11 @@ class Fnmvscheduler(_PluginBase):
         ]
         
         default_values = {
-            "enabled": False,
-            "run_once": False,
-            "cloud_drive_mode": False,
-            "check_tasks_once": False,
-            "selected_mediaservers": [],
+            "enabled": self._enabled, # 保留用户配置
+            "run_once": False, # 每次加载都应为False
+            "cloud_drive_mode": self._cloud_drive_mode, # 保留用户配置
+            "check_tasks_once": False, # 每次加载都应为False
+            "selected_mediaservers": self._selected_mediaservers, # 保留用户配置
         }
 
         return form_config, default_values
@@ -517,14 +534,13 @@ class Fnmvscheduler(_PluginBase):
 
     def stop_service(self):
         """退出插件时停止所有调度器"""
-        if self._task_scheduler and self._task_scheduler.running:
-            self._task_scheduler.shutdown(wait=False)
-            self._task_scheduler = None
-            logger.info("【飞牛影视调度器】任务调度器已停止。")
-        
+        # 【修改点8】: 移除了关闭内部调度器的逻辑
+        logger.info("【飞牛影视调度器】插件已停用。")
+        # 注销事件监听器，避免在插件禁用后依然响应
         try:
             from app.core.event import eventmanager
             eventmanager.remove_event_listener(EventType.TransferComplete, self.handle_transfer_complete)
+            logger.info("【飞牛影视调度器】转移完成事件监听器已注销。")
         except Exception as e:
             logger.debug(f"【飞牛影视调度器】注销事件监听器时出错（可能已被注销）: {e}")
-
+        return True
