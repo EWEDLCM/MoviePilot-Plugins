@@ -6,7 +6,7 @@
 
 | 插件名称 | 描述 | 版本 |
 | --- | --- | --- |
-| [站点签到（多站点版）](./plugins/dzdsingnin/README.md) | 支持多个站点的自动签到功能，用户可自定义签到站点配置 | 1.1.1 |
+| [站点签到（多站点版）](./plugins/dzdsingnin/README.md) | 支持多个站点的自动签到功能，用户可自定义签到站点配置 | 1.1.3 |
 | [代理地址测试](./plugins/proxytest/README.md) | 测试容器内的HTTP代理设置，并尝试使用代理连接外网 | 1.1.1 |
 | [插件代理控制器](./plugins/proxycontroller/README.md) |用于控制其他插件是否使用 PROXY_HOST 代理 | 1.6.2 |
 | [邮件集](./plugins/yjj/README.md) |实时监控邮箱，支持验证码AI识别和关键词过滤，按需推送重要邮件| 1.1.8 |
