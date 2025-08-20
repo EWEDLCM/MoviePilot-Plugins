@@ -51,7 +51,7 @@
     "name": "飞牛影视调度器",
     "description": "智能调度飞牛媒体服务器的媒体库扫描。监听文件转移事件，提供本地和网盘两种模式，网盘模式包含防抖、冲突检测和静默等待等逻辑，避免无效扫描。",
     "labels": "飞牛,调度器,媒体库",
-    "version": "1.0.9",
+    "version": "0.0.9",
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png",
     "author": "EWEDL",
     "level": 1,
