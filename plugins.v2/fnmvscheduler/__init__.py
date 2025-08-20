@@ -24,8 +24,7 @@ import app.modules.trimemedia.api as fnapi
 from app.utils.url import UrlUtils
 
 
-class Fnmvscheduler(_PluginBase):
-    __name__ = "fnmvscheduler" # 强制类名为小写，以匹配MoviePilot的内部加载机制
+class fnmvscheduler(_PluginBase):
     # 插件名称
     plugin_name = "飞牛影视调度器"
     # 插件描述
@@ -412,3 +411,4 @@ class Fnmvscheduler(_PluginBase):
         
         logger.info("【飞牛影视调度器】插件已停用。")
         return True
+
