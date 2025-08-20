@@ -32,7 +32,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "0.0.9"  # 版本号更新，代表修复了加载问题
+    plugin_version = "1.0.9"  # 版本号更新，代表修复了加载问题
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
