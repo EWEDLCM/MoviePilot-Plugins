@@ -32,7 +32,7 @@ class fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "1.2.1" 
+    plugin_version = "1.5.0" 
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -549,3 +549,4 @@ class fnmvscheduler(_PluginBase):
             eventmanager.remove_event_listener(EventType.TransferComplete, self.handle_transfer_complete)
         except Exception as e:
             logger.debug(f"【飞牛影视调度器】注销事件监听器时出错（可能已被注销）: {e}")
+
