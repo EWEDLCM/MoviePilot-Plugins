@@ -32,7 +32,7 @@ class fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "0.0.9"  
+    plugin_version = "1.2.1" 
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -40,7 +40,7 @@ class fnmvscheduler(_PluginBase):
     # 插件配置项ID前缀
     plugin_config_prefix = "fnmvscheduler_"
     # 加载顺序
-    plugin_order = 1
+    plugin_order = 100
     # 可使用的用户级别
     auth_level = 1
 
@@ -50,11 +50,17 @@ class fnmvscheduler(_PluginBase):
     _cloud_drive_mode = False
     _check_tasks_once = False
     _selected_mediaservers: List[str] = []
+    _mediaserver_helper: Optional[MediaServerHelper] = None
     _scan_lock = threading.Lock()
-    # 【修改点1】: 恢复插件自己的调度器实例，但设为 Optional
     _task_scheduler: Optional[BackgroundScheduler] = None
 
+    def __init__(self):
+        super().__init__()
+        logger.debug("【飞牛影视调度器】Fnmvscheduler 类 __init__ 方法被调用。")
+
     def init_plugin(self, config: dict = None):
+        logger.debug("【飞牛影视调度器】init_plugin 方法被调用。")
+        self.stop_service()  # Ensure a clean state on re-initialization
         if config:
             self._enabled = config.get("enabled", False)
             self._run_once = config.get("run_once", False)
@@ -62,10 +68,23 @@ class fnmvscheduler(_PluginBase):
             self._check_tasks_once = config.get("check_tasks_once", False)
             self._selected_mediaservers = config.get("selected_mediaservers", [])
 
-        # 【修改点2】: 在初始化时创建调度器实例，但 **不启动** 它
-        self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
+        try:
+            self._mediaserver_helper = MediaServerHelper()
+        except Exception as e:
+            logger.error(f"【飞牛影视调度器】MediaServerHelper 初始化失败: {e}", exc_info=True)
+            self._enabled = False
+            return
 
-        # “立即运行”功能使用临时的、一次性的调度器，这种方式是安全的，予以保留
+        try:
+            if not self._task_scheduler or not self._task_scheduler.running:
+                self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
+                self._task_scheduler.start()
+                logger.info("【飞牛影视调度器】任务调度器已启动。")
+        except Exception as e:
+            logger.error(f"【飞牛影视调度器】任务调度器启动失败: {e}", exc_info=True)
+            self._enabled = False
+            return
+
         if self._enabled and self._run_once:
             logger.info("【飞牛影视调度器】检测到 '运行一次' 选项已勾选...")
             run_once_scheduler = BackgroundScheduler(timezone=settings.TZ)
@@ -74,26 +93,20 @@ class fnmvscheduler(_PluginBase):
                 trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=3)),
                 name="Log Media Libraries Once"
             )
-            run_once_scheduler.start()
+            try:
+                run_once_scheduler.start()
+            except Exception as e:
+                logger.error(f"【飞牛影视调度器】'运行一次' 调度器启动失败: {e}", exc_info=True)
 
         if self._enabled and self._check_tasks_once:
             logger.info("【飞牛影视调度器】检测到 '扫描任务检测' 选项已勾选，准备执行一次性任务检查...")
-            # 同样使用临时调度器来确保安全
-            check_scheduler = BackgroundScheduler(timezone=settings.TZ)
-            check_scheduler.add_job(
-                func=self._execute_check_and_reset,
-                trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=3)),
-                name="Check Running Tasks Once"
-            )
-            check_scheduler.start()
-
-    def _ensure_scheduler_running(self):
-        """
-        一个辅助方法，确保调度器在需要时已经启动。
-        """
-        if self._task_scheduler and not self._task_scheduler.running:
-            self._task_scheduler.start()
-            logger.info("【飞牛影视调度器】事件触发，按需启动内部任务调度器。")
+            try:
+                self._task_scheduler.add_job(
+                    func=self._execute_check_and_reset,
+                    name="Check Running Tasks Once"
+                )
+            except Exception as e:
+                logger.error(f"【飞牛影视调度器】添加 '扫描任务检测' 任务失败: {e}", exc_info=True)
 
     def _execute_check_and_reset(self):
         """
@@ -101,8 +114,7 @@ class fnmvscheduler(_PluginBase):
         """
         try:
             logger.info("【飞牛影视调度器】开始检查所有已配置飞牛服务器的正在运行任务...")
-            mediaserver_helper = MediaServerHelper()
-            all_configs = mediaserver_helper.get_configs()
+            all_configs = self._mediaserver_helper.get_configs()
             
             checked_any = False
             for config in all_configs.values():
@@ -163,31 +175,49 @@ class fnmvscheduler(_PluginBase):
             logger.info("【飞牛影视调度器】'运行一次' 选项已重置为 False。")
 
     def _create_feiniu_api(self, host: str, api_key: str) -> Tuple[Optional[fnapi.Api], Optional[str]]:
+        """
+        创建一个飞牛API实例，并返回API对象和其有效的base_url
+        """
         standard_host = UrlUtils.standardize_base_url(host).rstrip("/")
+        
         host_with_v = f"{standard_host}/v"
         api = fnapi.Api(host_with_v, api_key)
         try:
-            if api.sys_version(): return api, host_with_v
-        except Exception: pass
+            if api.sys_version():
+                return api, host_with_v
+        except Exception:
+            pass
+        
         api = fnapi.Api(standard_host, api_key)
         try:
-            if api.sys_version(): return api, standard_host
-        except Exception: pass
+            if api.sys_version():
+                return api, standard_host
+        except Exception:
+            pass
+            
         return None, None
     
     def _is_cloud_path(self, path_str: str) -> bool:
+        """判断路径是否为网盘路径（以/vol0开头）"""
         if not path_str: return False
         normalized_path = os.path.normpath(path_str)
         return normalized_path.startswith(f"{os.sep}vol0")
 
     def _get_running_tasks(self, api: fnapi.Api, base_url: str, token: str) -> List[str]:
+        """调用 /task/running 接口并返回正在运行的媒体库GUID列表"""
         try:
             task_url = f"{base_url.rstrip('/')}/api/v1/task/running"
-            headers = {"Authorization": token, "Accept": "application/json"}
+            
+            headers = {
+                "Authorization": token,
+                "Accept": "application/json"
+            }
             logger.debug(f"【飞牛影视调度器】正在请求运行中的任务列表，URL: {task_url}")
+            
             response = api._session.get(task_url, headers=headers, timeout=10)
             response.raise_for_status()
             data = response.json()
+            
             if data and data.get("code") == 0 and "data" in data:
                 tasks = data.get("data", [])
                 running_guids = list(set(task.get("guid") for task in tasks if task.get("guid")))
@@ -195,6 +225,7 @@ class fnmvscheduler(_PluginBase):
                 return running_guids
             else:
                 logger.warning(f"【飞牛影视调度器】获取任务列表时API返回错误: {data}")
+                return []
         except Exception as e:
             logger.error(f"【飞牛影视调度器】获取正在运行的任务列表时发生网络或解析错误: {e}")
         return []
@@ -202,10 +233,6 @@ class fnmvscheduler(_PluginBase):
     @eventmanager.register(EventType.TransferComplete)
     def handle_transfer_complete(self, event: Event):
         if not self._enabled: return
-        
-        # 【修改点3】: "懒加载" - 在事件入口处确保调度器已启动
-        self._ensure_scheduler_running()
-        
         if not self._scan_lock.acquire(blocking=False):
             logger.debug("【飞牛影视调度器】事件处理中，跳过重复触发。")
             return
@@ -225,9 +252,9 @@ class fnmvscheduler(_PluginBase):
             category_path = os.path.dirname(series_parent_path)
             if not category_path.endswith(os.sep): category_path += os.sep
 
-            mediaserver_helper = MediaServerHelper()
-            all_services = mediaserver_helper.get_services()
-            all_configs = mediaserver_helper.get_configs()
+            _mediaserver_helper = self._mediaserver_helper
+            all_services = _mediaserver_helper.get_services()
+            all_configs = _mediaserver_helper.get_configs()
             if not all_services: return
 
             for name, service_info in all_services.items():
@@ -250,27 +277,38 @@ class fnmvscheduler(_PluginBase):
             self._scan_lock.release()
 
     def _handle_local_scan_request(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
+        """处理本地模式下的扫描请求，立即执行。"""
         logger.info(f"【飞牛影视调度器-本地模式】媒体库 '{lib.name}' 收到扫描请求，立即执行。")
         job_id = f"immediate_scan_{lib.id}_{datetime.now().timestamp()}"
-        # 【修改点4】: 所有调度调用都改回 self._task_scheduler
         self._task_scheduler.add_job(self._execute_scan, args=[lib, feiniu_config], id=job_id, name=f"Immediate Scan for {lib.name}")
     
     def _handle_cloud_scan_request(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
+        """
+        处理网盘模式下的扫描请求，启动或重置5分钟防抖计时器。
+        如果存在后续任务（重试或静默等待），则取消它们，重新开始流程。
+        """
         retry_job_id = f"retry_check_{lib.id}"
         final_scan_job_id = f"final_scan_{lib.id}"
+
+        # 检查并取消后续任务，实现逻辑中断
         try:
             if self._task_scheduler.get_job(retry_job_id):
                 self._task_scheduler.remove_job(retry_job_id)
                 logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 收到新事件，中断了正在进行的3分钟重试检查。")
-        except JobLookupError: pass
+        except JobLookupError:
+            pass
+        
         try:
             if self._task_scheduler.get_job(final_scan_job_id):
                 self._task_scheduler.remove_job(final_scan_job_id)
                 logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 收到新事件，中断了正在进行的10分钟静默等待。")
-        except JobLookupError: pass
+        except JobLookupError:
+            pass
 
+        # 设置或重置5分钟防抖计时器
         debounce_job_id = f"debounce_scan_{lib.id}"
         run_time = datetime.now() + timedelta(minutes=5)
+        
         if self._task_scheduler.get_job(debounce_job_id):
             self._task_scheduler.reschedule_job(debounce_job_id, trigger='date', run_date=run_time)
             logger.info(f"【飞牛影视调度器-网盘模式】检测到媒体库 '{lib.name}' 的新请求，重置5分钟防抖计时器。")
@@ -278,70 +316,109 @@ class fnmvscheduler(_PluginBase):
             logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 收到扫描请求，启动5分钟防抖等待。")
             self._task_scheduler.add_job(
                 self._after_debounce_check, 'date', run_date=run_time, 
-                args=[lib, feiniu_config], id=debounce_job_id, name=f"Debounce Check for {lib.name}", replace_existing=True)
+                args=[lib, feiniu_config], 
+                id=debounce_job_id, name=f"Debounce Check for {lib.name}", 
+                replace_existing=True
+            )
 
     def _after_debounce_check(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
+        """5分钟防抖结束后，检查任务状态并决定下一步操作。"""
         logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 的5分钟防抖期结束，开始检查当前扫描状态...")
+        
         host = feiniu_config.config.get("host")
         username = feiniu_config.config.get("username")
         password = feiniu_config.config.get("password")
         api_key = "16CCEB3D-AB42-077D-36A1-F355324E4237"
+        
         api, base_url = self._create_feiniu_api(host, api_key)
         token = api.login(username, password) if api else None
+        
         if not token:
             logger.error(f"【飞牛影视调度器】无法登录飞牛服务器 '{feiniu_config.name}'，扫描任务中止。")
             if api: api.close()
             return
+
         is_scanning = False
         try:
-            if lib.id in self._get_running_tasks(api, base_url, token): is_scanning = True
-        finally: api.close()
+            running_tasks = self._get_running_tasks(api, base_url, token)
+            if lib.id in running_tasks:
+                is_scanning = True
+        finally:
+            api.close()
+
         if is_scanning:
             logger.info(f"【飞牛影视调度器-网盘模式】检测到媒体库 '{lib.name}' 正在扫描中。启动3分钟后的重试检查。")
             retry_job_id = f"retry_check_{lib.id}"
             self._task_scheduler.add_job(
                 self._retry_check_loop, 'date', run_date=datetime.now() + timedelta(minutes=3), 
-                args=[lib, feiniu_config], id=retry_job_id, name=f"Retry Check for {lib.name}", replace_existing=True)
+                args=[lib, feiniu_config], 
+                id=retry_job_id, name=f"Retry Check for {lib.name}", 
+                replace_existing=True
+            )
         else:
             logger.info(f"【飞牛影视调度器-网盘模式】确认媒体库 '{lib.name}' 当前无扫描任务，立即执行扫描。")
             self._execute_scan(lib, feiniu_config)
 
     def _retry_check_loop(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
+        """
+        循环检查任务状态，如果任务仍在运行，则安排下一次检查；如果任务已停止，则进入10分钟静默期。
+        """
         logger.info(f"【飞牛影视调度器-网盘模式】正在对媒体库 '{lib.name}' 进行3分钟后的重试检查...")
-        host, username, password = feiniu_config.config.get("host"), feiniu_config.config.get("username"), feiniu_config.config.get("password")
+        
+        host = feiniu_config.config.get("host")
+        username = feiniu_config.config.get("username")
+        password = feiniu_config.config.get("password")
         api_key = "16CCEB3D-AB42-077D-36A1-F355324E4237"
+        
         api, base_url = self._create_feiniu_api(host, api_key)
         token = api.login(username, password) if api else None
+        
         if not token:
             logger.error(f"【飞牛影视调度器】无法登录飞牛服务器 '{feiniu_config.name}'，重试检查中止。")
             if api: api.close()
             return
+            
         is_scanning = False
         try:
-            if lib.id in self._get_running_tasks(api, base_url, token): is_scanning = True
-        finally: api.close()
+            if lib.id in self._get_running_tasks(api, base_url, token):
+                is_scanning = True
+        finally:
+            api.close()
+
         if is_scanning:
             logger.info(f"【飞牛影视调度器-网盘模式】媒体库 '{lib.name}' 仍在扫描中。将在3分钟后再次检查。")
             retry_job_id = f"retry_check_{lib.id}"
             self._task_scheduler.add_job(
                 self._retry_check_loop, 'date', run_date=datetime.now() + timedelta(minutes=3), 
-                args=[lib, feiniu_config], id=retry_job_id, name=f"Retry Check for {lib.name}", replace_existing=True)
+                args=[lib, feiniu_config], 
+                id=retry_job_id, name=f"Retry Check for {lib.name}", 
+                replace_existing=True
+            )
         else:
             logger.info(f"【飞牛影视调度器-网盘模式】确认媒体库 '{lib.name}' 的扫描任务已结束。开始10分钟的静默等待期。")
             final_scan_job_id = f"final_scan_{lib.id}"
             self._task_scheduler.add_job(
                 self._execute_scan, 'date', run_date=datetime.now() + timedelta(minutes=10), 
-                args=[lib, feiniu_config], id=final_scan_job_id, name=f"Final Scan for {lib.name}", replace_existing=True)
+                args=[lib, feiniu_config], 
+                id=final_scan_job_id, name=f"Final Scan for {lib.name}", 
+                replace_existing=True
+            )
 
     def _execute_scan(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf):
+        """最终执行扫描的函数。"""
         logger.info(f"【飞牛影视调度器】开始对媒体库 '{lib.name}' (ID: {lib.id}) 发起扫描请求...")
-        host, username, password = feiniu_config.config.get("host"), feiniu_config.config.get("username"), feiniu_config.config.get("password")
+        host = feiniu_config.config.get("host")
+        username = feiniu_config.config.get("username")
+        password = feiniu_config.config.get("password")
         api_key = "16CCEB3D-AB42-077D-36A1-F355324E4237"
+        
         api, _ = self._create_feiniu_api(host, api_key)
+
         if not api or not api.login(username, password):
             logger.error(f"【飞牛影视调度器】执行扫描前登录飞牛服务器 '{feiniu_config.name}' 失败。")
             if api: api.close()
             return
+        
         try:
             mdb_to_scan = fnapi.MediaDb(guid=lib.id, category=fnapi.Category.MOVIE, name=lib.name)
             success = api.mdb_scan(mdb_to_scan)
@@ -352,63 +429,123 @@ class fnmvscheduler(_PluginBase):
             api.close()
             
     def _log_media_libraries(self):
+        """
+        获取并记录媒体库信息 (此为 "运行一次" 功能的完整实现)
+        """
         logger.info("【飞牛影视调度器】开始获取媒体库信息...")
-        mediaserver_helper = MediaServerHelper()
-        if not mediaserver_helper:
+        _mediaserver_helper = self._mediaserver_helper
+        if not _mediaserver_helper:
             logger.error("【飞牛影视调度器】MediaServerHelper 未初始化。无法获取媒体库信息。")
             return
-        all_services: Optional[Dict[str, ServiceInfo]] = mediaserver_helper.get_services()
+        
+        all_services: Optional[Dict[str, ServiceInfo]] = _mediaserver_helper.get_services()
+
         if not all_services:
             logger.warning("【飞牛影视调度器】未找到任何配置的媒体服务器。")
             return
+
         logged_any = False
         for name, service_info in all_services.items():
-            if self._selected_mediaservers and name not in self._selected_mediaservers: continue
+            if self._selected_mediaservers and name not in self._selected_mediaservers:
+                continue
+
             logger.info(f"【飞牛影视调度器】正在处理媒体服务器: {name} (类型: {str(service_info.type)})")
+            
             if service_info.instance.is_inactive():
                 logger.warning(f"【飞牛影视调度器】媒体服务器 {name} 未连接或不活跃，跳过。")
                 continue
+
             try:
                 libraries: List[MediaServerLibrary] = service_info.instance.get_librarys()
                 if not libraries:
                     logger.info(f"【飞牛影视调度器】媒体服务器 {name} 未发现任何媒体库。")
                     continue
+
                 for lib in libraries:
                     logged_any = True
-                    logger.info(f"【飞牛影视调度器】媒体服务器: {name}, 库ID: {lib.id}, 库类型: {str(lib.type)}, 库名称: {lib.name}, 路径: {lib.path}")
+                    logger.info(f"【飞牛影视调度器】媒体服务器: {name}")
+                    logger.info(f"  - 库ID: {lib.id}")
+                    logger.info(f"  - 库类型: {str(lib.type)}") 
+                    logger.info(f"  - 库名称: {lib.name}")
+                    logger.info(f"  - 路径: {lib.path}")
                     logger.info("-" * 20)
             except Exception as e:
                 logger.error(f"【飞牛影视调度器】获取媒体服务器 {name} 的媒体库信息时发生错误: {e}")
-        if not logged_any: logger.info("【飞牛影视调度器】没有媒体库信息被记录到日志中。")
+
+        if not logged_any:
+            logger.info("【飞牛影视调度器】没有媒体库信息被记录到日志中。")
         logger.info("【飞牛影视调度器】媒体库信息记录完成。")
 
     def get_state(self) -> bool:
         return self._enabled
 
-    def get_command(self) -> List[Dict[str, Any]]: pass
-    def get_api(self) -> List[Dict[str, Any]]: pass
-    def get_page(self) -> List[dict]: pass
+    @staticmethod
+    def get_command() -> List[Dict[str, Any]]:
+        pass
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        pass
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        mediaserver_helper = MediaServerHelper()
-        all_services_configs = mediaserver_helper.get_configs()
+        _mediaserver_helper = MediaServerHelper()
+        all_services_configs = _mediaserver_helper.get_configs()
         select_items = [{"title": config.name, "value": config.name} for config in all_services_configs.values()]
-        form_config = [{"component": "VCard", "props": {"variant": "outlined", "class": "mb-3"}, "content": [{"component": "VCardTitle", "props": {"class": "d-flex align-center"}, "content": [{"component": "VIcon", "props": {"icon": "mdi-cog", "color": "primary", "class": "mr-2"}}, {"component": "span", "text": "基本设置"}]}, {"component": "VDivider"}, {"component": "VCardText", "content": [{"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用插件"}}]}, {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "cloud_drive_mode", "label": "网盘模式", "color": "primary"}}]}, {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "run_once", "label": "媒体库获取检测"}}]}, {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "check_tasks_once", "label": "扫描任务检测", "color": "orange"}}]}, ]}, {"component": "VSelect", "props": {"multiple": True, "chips": True, "clearable": True, "model": "selected_mediaservers", "label": "选择媒体服务器（留空则处理所有）", "items": select_items}}]}]}]
-        default_values = {"enabled": self._enabled, "run_once": False, "cloud_drive_mode": self._cloud_drive_mode, "check_tasks_once": False, "selected_mediaservers": self._selected_mediaservers}
+
+        form_config = [
+            {
+                "component": "VCard",
+                "props": {"variant": "outlined", "class": "mb-3"},
+                "content": [
+                    {
+                        "component": "VCardTitle",
+                        "props": {"class": "d-flex align-center"},
+                        "content": [
+                            {"component": "VIcon", "props": {"icon": "mdi-cog", "color": "primary", "class": "mr-2"}},
+                            {"component": "span", "text": "基本设置"},
+                        ],
+                    },
+                    {"component": "VDivider"},
+                    {
+                        "component": "VCardText",
+                        "content": [
+                            {
+                                "component": "VRow",
+                                "content": [
+                                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用插件"}}]},
+                                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "cloud_drive_mode", "label": "网盘模式", "color": "primary"}}]},
+                                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "run_once", "label": "媒体库获取检测"}}]},
+                                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "check_tasks_once", "label": "扫描任务检测", "color": "orange"}}]},
+                                ],
+                            },
+                            {"component": "VSelect", "props": {"multiple": True, "chips": True, "clearable": True, "model": "selected_mediaservers", "label": "选择媒体服务器（留空则处理所有）", "items": select_items}},
+                        ],
+                    },
+                ],
+            },
+        ]
+        
+        default_values = {
+            "enabled": False,
+            "run_once": False,
+            "cloud_drive_mode": False,
+            "check_tasks_once": False,
+            "selected_mediaservers": [],
+        }
+
         return form_config, default_values
+
+    def get_page(self) -> List[dict]:
+        pass
 
     def stop_service(self):
         """退出插件时停止所有调度器"""
-        # 【修改点5】: 恢复 stop_service 的功能，以关闭内部调度器
         if self._task_scheduler and self._task_scheduler.running:
             self._task_scheduler.shutdown(wait=False)
-            logger.info("【飞牛影视调度器】内部任务调度器已停止。")
+            self._task_scheduler = None
+            logger.info("【飞牛影视调度器】任务调度器已停止。")
         
         try:
+            from app.core.event import eventmanager
             eventmanager.remove_event_listener(EventType.TransferComplete, self.handle_transfer_complete)
         except Exception as e:
             logger.debug(f"【飞牛影视调度器】注销事件监听器时出错（可能已被注销）: {e}")
-        
-        logger.info("【飞牛影视调度器】插件已停用。")
-        return True
-
