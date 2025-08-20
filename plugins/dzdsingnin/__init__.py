@@ -409,9 +409,6 @@ class dzdsingnin(_PluginBase):
         # 尝试适配较新版本的VDataTable插槽语法
         try:
             from inspect import signature
-            # 这是一个简化的判断，实际情况可能更复杂
-            # 如果 MoviePilot 的环境升级了，这里的判断逻辑可能需要调整
-            # 但目前这种方式可以兼容两种常见的插槽定义
             page_content[0]['content'][0]['slots']['expanded-row'] = {
                 'component': 'td', 'props': {'colspan': len(columns)}, 'content': [
                     {'component': 'VSheet', 'props': {'class': 'pa-4'}, 'content': [
@@ -426,8 +423,6 @@ class dzdsingnin(_PluginBase):
 
     def stop_service(self):
         """停止插件服务"""
-        # 由于我们不再自己管理一个持久化的 scheduler，这个函数基本可以为空。
-        # 框架在停用插件时会自动移除 get_service 中注册的任务。
         logger.info("站点签到（多站点版）插件已停用。")
         return True
 
