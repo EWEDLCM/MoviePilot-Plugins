@@ -55,7 +55,6 @@
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png",
     "author": "EWEDL",
     "level": 1,
-    "v2": true,
     "history": {
       "0.0.9": "插件更名为“飞牛影视调度器”，并统一更新日志输出。"
     }
