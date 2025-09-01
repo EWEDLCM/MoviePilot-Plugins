@@ -59,7 +59,7 @@
       "1.5.1": "优化日志和代码结构"
     }
   },
-    "Cfworkerheartbeat": {
+  "Cfworkerheartbeat": {
     "name": "CFW设备在线汇报",
     "description": "用于定期发送心跳请求，汇报设备在线状态，配合Cloudflare Worker 或服务器实现离线邮件通知",
     "labels": "邮件,设备状态,离线通知",
