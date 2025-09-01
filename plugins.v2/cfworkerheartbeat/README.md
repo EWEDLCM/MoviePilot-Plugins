@@ -50,5 +50,6 @@ CFW设备在线汇报插件用于定期向 Cloudflare Worker 或服务器发送�
 
 ## 参考
 
-- 详细使用说明请见飞牛论坛相关帖子。
+- 详细使用说明请见飞牛论坛相关帖子[利用Cloudflare或服务器实现设备离线邮件通知](https://club.fnnas.com/forum.php?mod=viewthread&tid=36122)。
 - 如有问题可在作者主页或论坛反馈。
+
