@@ -455,7 +455,7 @@ class Cfworkerheartbeat(_PluginBase):
                                                 'props': {
                                                     'class': 'text-body-1 mt-2'
                                                 },
-                                                'text': '详见飞牛论坛帖子详情：'
+                                                'text': '详见飞牛论坛帖子：https://club.fnnas.com/forum.php?mod=viewthread&tid=36122'
                                             }
                                         ]
                                     }
@@ -485,3 +485,4 @@ class Cfworkerheartbeat(_PluginBase):
         """注册API"""
 
         return []
+
