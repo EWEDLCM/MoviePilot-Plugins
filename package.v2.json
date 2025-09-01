@@ -58,5 +58,17 @@
     "history": {
       "1.5.1": "优化日志和代码结构"
     }
+  },
+    "Cfworkerheartbeat": {
+    "name": "CFW设备在线汇报",
+    "description": "用于定期发送心跳请求，汇报设备在线状态，配合Cloudflare Worker 或服务器实现离线邮件通知",
+    "labels": "邮件,设备状态,离线通知",
+    "version": "1.0.3",
+    "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/cfworkerheartbeat.png",
+    "author": "EWEDL",
+    "level": 2,
+    "history": {
+      "v1.0.3": "添加详细日志、复用代理功能开关"
+    }
   }
 } 
