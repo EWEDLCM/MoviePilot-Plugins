@@ -31,7 +31,7 @@ class Cfworkerheartbeat(_PluginBase):
     # 插件描述
     plugin_desc = "定期向Cloudflare Worker或服务器发送心跳请求，汇报设备在线状态"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/cloudflare.png"
+    plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/cfworkerheartbeat.png"
     # 插件版本
     plugin_version = "1.0.3"
     # 插件作者
@@ -483,4 +483,5 @@ class Cfworkerheartbeat(_PluginBase):
 
     def get_api(self) -> List[Dict[str, Any]]:
         """注册API"""
+
         return []
