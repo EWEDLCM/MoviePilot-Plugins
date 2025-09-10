@@ -1,7 +1,7 @@
 {
-  "cloudimg123": {
-    "name": "CloudImg123 - 123云盘图床",
-    "description": "23云盘图床插件，采用123官方接口，支持图片上传、多格式链接生成、缩略图缓存和token智能管理",
+  "CloudImg123": {
+    "name": "123云盘图床",
+    "description": "123云盘图床插件，采用123官方接口，支持图片上传、多格式链接生成、缩略图缓存和token智能管理",
     "labels": "图床,123云盘",
     "version": "1.2.0",
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/cloudimg123.png",
