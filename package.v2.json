@@ -3,13 +3,13 @@
     "name": "123云盘图床",
     "description": "123云盘图床插件，采用123官方接口，支持图片上传、多格式链接生成、缩略图缓存和token智能管理",
     "labels": "图床,123云盘",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "v2": true,
     "icon": "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/cloudimg123.png",
     "author": "EWEDL",
     "level": 2,
     "history": {
-      "v1.2.0": "修复因懒加载导致的无法预览问题；修复删除后端处理逻辑；增加上传取消按钮；增加对移动端的适配",
+      "v1.3.0": "修复因懒加载导致的无法预览问题；修复删除后端处理逻辑；增加上传取消按钮；增加对移动端的适配",
       "v1.1.0": "完善缩略图系统、优化上传管理和界面交互"
     }
   },
