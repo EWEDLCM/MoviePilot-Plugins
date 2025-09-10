@@ -6,7 +6,7 @@
 
 | 插件名称 | 描述 | 版本 |
 | --- | --- | --- |
-| [123云盘图床](./plugins.v2/cloudimg123/README.md) | 123云盘图床插件，采用123官方接口，支持图片上传、多格式链接生成、缩略图缓存和token智能管理 | 1.2.0 |
+| [123云盘图床](./plugins.v2/cloudimg123/README.md) | 123云盘图床插件，采用123官方接口，支持图片上传、多格式链接生成、缩略图缓存和token智能管理 | 1.3.0 |
 | [站点签到（多站点版）](./plugins.v2/dzdsingnin/README.md) | 支持多个站点的自动签到功能，用户可自定义签到站点配置 | 1.1.3 |
 | [代理地址测试](./plugins.v2/proxytest/README.md) | 测试容器内的HTTP代理设置，并尝试使用代理连接外网 | 1.1.1 |
 | [插件代理控制器](./plugins.v2/proxycontroller/README.md) |用于控制其他插件是否使用 PROXY_HOST 代理 | 1.6.2 |
