@@ -1,4 +1,4 @@
-# CloudImg123 - MoviePilot插件
+# CloudImg123 - 123云盘图床
 
 一个功能完整的123云盘图床插件，支持图片上传和多格式链接生成。
 
@@ -105,5 +105,6 @@ MIT License
 
 
 欢迎提交Issue和Pull Request来改进这个插件。
+
 
 
