@@ -106,7 +106,7 @@ class Fnmvscheduler(_PluginBase):
                 if test_signature:
                     logger.debug(f"【飞牛影视调度器】日志解析功能正常，成功提取到测试签名：{test_signature}")
                 else:
-                    logger.warning("【飞牛影视调度器】日志解析测试失败，未能在日志中找到期望签名，精确扫描功能可能无法正常工作")
+                    logger.debug("【飞牛影视调度器】日志解析测试失败，未能在日志中找到期望签名，精确扫描功能可能无法正常工作")
             else:
                 logger.warning(f"【飞牛影视调度器】日志文件检测失败：{self._trim_log_file_path}，请确认Docker映射配置是否正确")
                 logger.warning("【飞牛影视调度器】精确扫描功能将回退到常规扫描模式")
@@ -1678,7 +1678,7 @@ class SignatureManager:
                     data = json.load(f)
                     signature = data.get('current_signature')
                     if signature:
-                        logger.info(f"【飞牛影视调度器】从缓存文件中读取到签名：{signature}")
+                        logger.debug(f"【飞牛影视调度器】从缓存文件中读取到签名：{signature}")
                         return signature
             logger.debug(f"【飞牛影视调度器】未找到缓存的签名，使用内置过期签名：{self._expired_signature}")
             return self._expired_signature
@@ -1877,7 +1877,7 @@ class LogParser:
                 else:
                     logger.debug(f"【飞牛影视调度器】第{attempt + 1}次尝试未找到期望签名")
 
-            logger.warning(f"【飞牛影视调度器】在日志文件中未找到期望签名（已重试{max_retries}次）")
+            logger.debug(f"【飞牛影视调度器】在日志文件中未找到期望签名（已重试{max_retries}次）")
             return None
 
         except Exception as e:
