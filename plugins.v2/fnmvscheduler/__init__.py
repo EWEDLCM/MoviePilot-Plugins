@@ -40,7 +40,7 @@ class Fnmvscheduler(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/EWEDLCM/MoviePilot-Plugins/main/icons/fnmv.png"
     # 插件版本
-    plugin_version = "2.2.0" 
+    plugin_version = "2.2.2" 
     # 插件作者
     plugin_author = "EWEDL"
     # 作者主页
@@ -64,9 +64,7 @@ class Fnmvscheduler(_PluginBase):
     _auto_clear_log = False 
     _cron_schedule: str = "0 8 * * 1" 
     _precision_scan_enabled = False 
-    _trim_log_file_path = "/trim-media/trim-media.log" 
     _signature_manager = None 
-    _log_parser = None 
     _library_scan_requests = {} 
     _token_manager = None 
     _precision_scan_notify = False 
@@ -88,34 +86,9 @@ class Fnmvscheduler(_PluginBase):
 
         self._task_scheduler = BackgroundScheduler(timezone=settings.TZ)
 
-        # 初始化签名管理器、日志解析器和Token管理器
+        # 初始化签名管理器和Token管理器
         self._signature_manager = SignatureManager()
-        self._log_parser = LogParser(self._trim_log_file_path)
         self._token_manager = Fnmvscheduler.TokenManager()
-
-        # 精确扫描功能检测
-        if self._enabled and self._precision_scan_enabled:
-            logger.info("【飞牛影视调度器】检测到精确扫描功能已启用，开始进行初始化检测...")
-
-            # 检测日志文件是否可读
-            if Path(self._trim_log_file_path).exists():
-                logger.info(f"【飞牛影视调度器】日志文件检测成功：{self._trim_log_file_path}")
-
-                # 尝试解析签名
-                test_signature = self._log_parser.extract_expected_signature()
-                if test_signature:
-                    logger.debug(f"【飞牛影视调度器】日志解析功能正常，成功提取到测试签名：{test_signature}")
-                else:
-                    logger.debug("【飞牛影视调度器】日志解析测试失败，未能在日志中找到期望签名，精确扫描功能可能无法正常工作")
-            else:
-                logger.warning(f"【飞牛影视调度器】日志文件检测失败：{self._trim_log_file_path}，请确认Docker映射配置是否正确")
-                logger.warning("【飞牛影视调度器】精确扫描功能将回退到常规扫描模式")
-
-            # 检测签名文件
-            current_signature = self._signature_manager.get_current_signature()
-            logger.debug(f"【飞牛影视调度器】当前使用的签名：{current_signature}")
-        else:
-            logger.info("【飞牛影视调度器】精确扫描功能未启用")
 
         if self._enabled and self._run_once:
             logger.info("【飞牛影视调度器】检测到 '媒体库获取测试' 选项已勾选...")
@@ -595,6 +568,10 @@ class Fnmvscheduler(_PluginBase):
                 self._after_local_debounce, 'date', run_date=run_time,
                 args=[lib, feiniu_config], id=debounce_job_id, name=f"Debounce Local Scan for {lib.name}", replace_existing=True)
 
+    def _get_total_pending_paths_count(self) -> int:
+        """获取所有媒体库的待扫描路径总数"""
+        return sum(req.get_path_count() for req in self._library_scan_requests.values())
+
     def _handle_precision_scan_request(self, lib: MediaServerLibrary, feiniu_config: MediaServerConf, folder_path: str):
         """
         处理精确扫描请求，支持多路径收集和去重，带2分钟防抖、3分钟重试循环和2分钟静默等待
@@ -609,8 +586,10 @@ class Fnmvscheduler(_PluginBase):
         is_new_path = library_request.add_path(folder_path)
 
         if is_new_path:
+            current_lib_count = library_request.get_path_count()
+            total_count = self._get_total_pending_paths_count()
             logger.info(f"【飞牛影视调度器-精确扫描】媒体库 '{lib.name}' 添加新的扫描路径: {folder_path}")
-            logger.info(f"【飞牛影视调度器-精确扫描】当前待扫描路径总数: {library_request.get_path_count()}")
+            logger.info(f"【飞牛影视调度器-精确扫描】待扫描路径: 本库 {current_lib_count} 个，全部 {total_count} 个")
         else:
             logger.debug(f"【飞牛影视调度器-精确扫描】媒体库 '{lib.name}' 收到重复的扫描路径: {folder_path}")
 
@@ -635,12 +614,14 @@ class Fnmvscheduler(_PluginBase):
 
         # 创建或重置防抖任务
         run_time = datetime.now() + timedelta(minutes=2)
+        current_lib_count = library_request.get_path_count()
+        total_count = self._get_total_pending_paths_count()
 
         if self._task_scheduler.get_job(debounce_job_id):
             self._task_scheduler.reschedule_job(debounce_job_id, trigger='date', run_date=run_time)
-            logger.info(f"【飞牛影视调度器-精确扫描】媒体库 '{lib.name}' 收到新路径，重置2分钟防抖计时器。当前路径数: {library_request.get_path_count()}")
+            logger.info(f"【飞牛影视调度器-精确扫描】媒体库 '{lib.name}' 收到新路径，重置2分钟防抖计时器（本库 {current_lib_count} 个，全部 {total_count} 个）")
         else:
-            logger.info(f"【飞牛影视调度器-精确扫描】媒体库 '{lib.name}' 收到精确扫描请求，启动2分钟防抖等待。路径数: {library_request.get_path_count()}")
+            logger.info(f"【飞牛影视调度器-精确扫描】媒体库 '{lib.name}' 收到精确扫描请求，启动2分钟防抖等待（本库 {current_lib_count} 个，全部 {total_count} 个）")
             self._task_scheduler.add_job(
                 self._after_precision_debounce_check, 'date', run_date=run_time,
                 args=[lib, feiniu_config], id=debounce_job_id, name=f"Debounce Precision Scan for {lib.name}", replace_existing=True)
@@ -841,15 +822,15 @@ class Fnmvscheduler(_PluginBase):
         对单个路径执行精确扫描
         返回是否成功
         """
-        # 标记是否为真正的签名错误（方法级变量，避免路径间冲突）
-        real_signature_error = False
-
         try:
             # 构建精确扫描请求参数
             scan_url = f"{base_url.rstrip('/')}/api/v1/mdb/scan/{lib.id}"
             api_path = f"/api/v1/mdb/scan/{lib.id}"
             payload = {"dir_list": [folder_path]}
-            body = json.dumps(payload, ensure_ascii=False)
+            # 关键修复：使用与测试12.py完全一致的JSON序列化方式（添加separators参数）
+            body = json.dumps(payload, separators=(',', ':'), ensure_ascii=False)
+            # 转换为UTF-8字节流，确保与签名计算一致
+            body_bytes = body.encode('utf-8')
 
             logger.debug(f"【飞牛影视调度器-精确扫描】准备发起精确扫描请求:")
             logger.debug(f"  - URL: {scan_url}")
@@ -870,110 +851,21 @@ class Fnmvscheduler(_PluginBase):
                 "authx": authx_info["authx_header"]
             }
 
-            # 尝试第一次请求
-            response = api._session.post(scan_url, headers=headers, json=payload, timeout=10)
+            # 发送请求（使用预序列化的UTF-8字节流）
+            response = api._session.post(scan_url, headers=headers, data=body_bytes, timeout=10)
             response.raise_for_status()
             data = response.json()
 
             if data and data.get("code") == 0:
-                logger.debug(f"【飞牛影视调度器-精确扫描】🎉 首次请求成功！")
+                logger.info(f"【飞牛影视调度器-精确扫描】🎉 请求成功！")
                 return True
             else:
-                logger.debug(f"【飞牛影视调度器-精确扫描】首次请求失败: {data}")
-                if data.get("code") == 5000 and "invalid sign" in data.get("msg", "").lower():
-                    logger.debug(f"【飞牛影视调度器-精确扫描】首次请求签名错误，准备进行二次请求...")
-                    # 首次请求的签名错误不算真正失败，继续二次请求
-                else:
-                    # 非签名错误，直接返回失败
-                    logger.warning(f"【飞牛影视调度器-精确扫描】首次请求非签名错误，放弃扫描")
-                    return False
-
-        except Exception as e:
-            logger.warning(f"【飞牛影视调度器-精确扫描】首次请求异常: {type(e).__name__}: {e}")
-            return False
-
-        # === 二次请求：从日志获取新签名 ===
-        try:
-            logger.debug(f"【飞牛影视调度器-精确扫描】=== 二次请求：从日志获取新签名 ===")
-
-            # 从日志提取期望签名（带重试机制）
-            new_signature = self._log_parser.extract_expected_signature(
-                max_retries=3,
-                initial_delay=1.0
-            )
-
-            if new_signature:
-                logger.debug(f"【飞牛影视调度器-精确扫描】✅ 成功从日志获取期望签名: {new_signature}")
-
-                # 更新签名到文件
-                if self._signature_manager.update_signature(new_signature):
-                    logger.debug(f"【飞牛影视调度器-精确扫描】✅ 签名已更新到缓存文件")
-
-                    # 使用新的签名重新构建authx头，保持原有的nonce和timestamp
-                    new_authx_header = self._signature_manager.regenerate_authx_with_new_sign(authx_info, new_signature)
-
-                    # 更新请求头
-                    headers["authx"] = new_authx_header
-
-                    # 发起第二次请求
-                    response = api._session.post(scan_url, headers=headers, json=payload, timeout=10)
-                    response.raise_for_status()
-                    data = response.json()
-
-                    if data and data.get("code") == 0:
-                        logger.info(f"【飞牛影视调度器-精确扫描】🎉 请求成功！")
-
-                        # 精确扫描成功后清理trim-media.log
-                        self._clear_trim_log_after_success()
-
-                        return True
-                    else:
-                        logger.warning(f"【飞牛影视调度器-精确扫描】二次请求失败: {data}")
-                        # 检查是否为签名错误
-                        if data.get("code") == 5000 and "invalid sign" in data.get("msg", "").lower():
-                            logger.error(f"【飞牛影视调度器-精确扫描】❌ 二次请求签名错误，这是真正的签名错误！")
-                            real_signature_error = True
-                        else:
-                            logger.warning(f"【飞牛影视调度器-精确扫描】二次请求非签名错误，放弃扫描")
-                        return False
-                else:
-                    logger.warning(f"【飞牛影视调度器-精确扫描】❌ 签名更新失败")
-                    return False
-            else:
-                logger.warning(f"【飞牛影视调度器-精确扫描】❌ 未能从日志获取期望签名")
+                logger.warning(f"【飞牛影视调度器-精确扫描】请求失败: {data}")
                 return False
 
         except Exception as e:
-            logger.warning(f"【飞牛影视调度器-精确扫描】二次请求异常: {type(e).__name__}: {e}")
+            logger.warning(f"【飞牛影视调度器-精确扫描】请求异常: {type(e).__name__}: {e}")
             return False
-
-        # 最终返回失败（只有真正的签名错误才会到达这里）
-        return False
-
-    def _clear_trim_log_after_success(self):
-        """
-        精确扫描成功后清理trim-media.log
-        当文件超过5MB时进行清理，防止日志文件过大
-        """
-        try:
-            trim_log_path = Path(self._trim_log_file_path)
-            if trim_log_path.exists():
-                file_size = trim_log_path.stat().st_size
-                threshold = 5 * 1024 * 1024  # 5MB
-
-                if file_size > threshold:
-                    # 清空文件内容（保留文件）
-                    with open(trim_log_path, 'w', encoding='utf-8') as f:
-                        f.truncate(0)
-
-                    logger.info(f"【飞牛影视调度器】✅ 精确扫描成功，已清理trim-media.log(原大小: {file_size/1024/1024:.1f}MB)")
-                else:
-                    logger.debug(f"【飞牛影视调度器】trim-media.log文件较小({file_size/1024:.1f}KB)，无需清理")
-            else:
-                logger.debug(f"【飞牛影视调度器】trim-media.log文件不存在，无需清理")
-
-        except Exception as e:
-            logger.error(f"【飞牛影视调度器】清理trim-media.log失败: {str(e)}")
 
     def _wait_for_scan_completion(self, api, base_url: str, token: str, lib: MediaServerLibrary, max_wait_minutes: int = 10) -> bool:
         """
@@ -1300,10 +1192,7 @@ class Fnmvscheduler(_PluginBase):
                                                                     {"component": "VCol", "props": {"cols": 12}, "content": [
                                                                         {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "class": "mt-2"}, "content": [
                                                                             {"component": "div", "props": {"class": "text-caption"}, "content": [
-                                                                                {"component": "div", "text": "本功能开启后，将启用指定文件夹扫描，可大幅缩短入库时间。"},
-                                                                                {"component": "div", "text": "开启须知：请在docker中添加如下路径映射"},
-                                                                                {"component": "div", "text": "/usr/local/apps/@appdata/trim.media/logs/trim-media.log:/trim-media/trim-media.log；"},
-                                                                                {"component": "div", "text": "如果没有读取到该文件，将会回退到常规扫描。"}
+                                                                                {"component": "div", "text": "本功能开启后，将启用指定文件夹扫描，可大幅缩短入库时间。"}
                                                                             ]}
                                                                         ]}
                                                                     ]}
@@ -1653,56 +1542,11 @@ class Fnmvscheduler(_PluginBase):
 
 
 class SignatureManager:
-    """签名管理器，用于管理飞牛API的authx签名"""
+    """签名管理器，用于生成飞牛API的authx签名"""
 
     def __init__(self):
         # 飞牛API签名密钥
         self._secret_key = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh"
-        # 签名文件路径（用于缓存从日志获取的签名）
-        self._signature_file_path = Path(settings.CONFIG_PATH) / "plugins" / "fnmvscheduler" / "signature.json"
-        self._ensure_signature_dir()
-
-    def _ensure_signature_dir(self):
-        """确保签名文件目录存在"""
-        try:
-            self._signature_file_path.parent.mkdir(parents=True, exist_ok=True)
-            logger.info(f"【飞牛影视调度器】签名文件目录已准备：{self._signature_file_path.parent}")
-        except Exception as e:
-            logger.error(f"【飞牛影视调度器】创建签名文件目录失败：{e}")
-
-    def get_current_signature(self) -> str:
-        """获取当前有效的签名"""
-        try:
-            if self._signature_file_path.exists():
-                with open(self._signature_file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    signature = data.get('current_signature')
-                    if signature:
-                        logger.debug(f"【飞牛影视调度器】从缓存文件中读取到签名：{signature}")
-                        return signature
-            logger.debug(f"【飞牛影视调度器】未找到缓存的签名，使用内置过期签名：{self._expired_signature}")
-            return self._expired_signature
-        except Exception as e:
-            logger.warning(f"【飞牛影视调度器】读取签名文件失败：{e}，使用内置过期签名")
-            return self._expired_signature
-
-    def update_signature(self, new_signature: str) -> bool:
-        """更新签名到文件"""
-        try:
-            signature_data = {
-                "current_signature": new_signature,
-                "updated_time": datetime.now().isoformat(),
-                "updated_reason": "从trim-media.log解析获取"
-            }
-
-            with open(self._signature_file_path, 'w', encoding='utf-8') as f:
-                json.dump(signature_data, f, ensure_ascii=False, indent=2)
-
-            logger.debug(f"【飞牛影视调度器】签名已更新并保存到文件：{new_signature}")
-            return True
-        except Exception as e:
-            logger.error(f"【飞牛影视调度器】保存签名文件失败：{e}")
-            return False
 
     def generate_authx_header(self, api_path: str, body: Optional[str], api_key: str) -> dict:
         """
@@ -1782,177 +1626,11 @@ class SignatureManager:
             return {
                 "nonce": "732840",
                 "timestamp": "1759369686238",
-                "sign": self._expired_signature,
-                "authx_header": f"nonce=732840&timestamp=1759369686238&sign={self._expired_signature}",
+                "sign": "",
+                "authx_header": f"nonce=732840&timestamp=1759369686238&sign=",
                 "api_path": api_path,
                 "data_hash": "",
                 "sign_string": ""
             }
 
-    def regenerate_authx_with_new_sign(self, original_authx_info: dict, new_signature: str) -> str:
-        """
-        使用新的签名重新生成authx头，保持原有的nonce和timestamp
 
-        :param original_authx_info: 原始的authx信息
-        :param new_signature: 从日志获取的新签名
-        :return: 重新构建的authx头
-        """
-        try:
-            original_nonce = original_authx_info.get("nonce")
-            original_timestamp = original_authx_info.get("timestamp")
-
-            if not original_nonce or not original_timestamp:
-                logger.error(f"【飞牛影视调度器】原始authx信息缺失nonce或timestamp")
-                return f"nonce=732840&timestamp=1759369686238&sign={new_signature}"
-
-            # 构建新的authx头，保持nonce和timestamp不变，只替换sign
-            new_authx_header = f"nonce={original_nonce}&timestamp={original_timestamp}&sign={new_signature}"
-
-            logger.debug(f"【飞牛影视调度器】重新构建authx头:")
-            logger.debug(f"  - 原始nonce: {original_nonce} (保持不变)")
-            logger.debug(f"  - 原始timestamp: {original_timestamp} (保持不变)")
-            logger.debug(f"  - 新签名: {new_signature}")
-            logger.debug(f"  - 新authx头: {new_authx_header}")
-
-            return new_authx_header
-
-        except Exception as e:
-            logger.error(f"【飞牛影视调度器】重新构建authx头失败: {e}")
-            return f"nonce=732840&timestamp=1759369686238&sign={new_signature}"
-
-    def build_authx_header(self, signature: str) -> str:
-        """构建authx请求头（保留方法以兼容现有代码）"""
-        try:
-            import time
-            import random
-            nonce = str(random.randint(100000, 999999))
-            timestamp = str(int(time.time() * 1000))
-            return f"nonce={nonce}&timestamp={timestamp}&sign={signature}"
-        except Exception as e:
-            logger.error(f"【飞牛影视调度器】构建authx请求头失败：{e}")
-            return f"nonce=732840&timestamp=1759369686238&sign={signature}"
-
-
-class LogParser:
-    """日志解析器，用于解析trim-media.log获取期望签名"""
-
-    def __init__(self, log_file_path: str):
-        self._log_file_path = log_file_path
-        self._last_file_size = 0
-        self._last_check_time = 0
-
-    def extract_expected_signature(self, max_retries: int = 3, initial_delay: float = 1.0) -> Optional[str]:
-        """
-        从日志文件中提取期望的签名，支持延迟重试
-
-        Args:
-            max_retries: 最大重试次数
-            initial_delay: 初始延迟时间（秒）
-        """
-        try:
-            if not Path(self._log_file_path).exists():
-                logger.warning(f"【飞牛影视调度器】日志文件不存在：{self._log_file_path}")
-                return None
-
-            logger.debug(f"【飞牛影视调度器】开始解析日志文件：{self._log_file_path}")
-
-            for attempt in range(max_retries):
-                if attempt > 0:
-                    # 每次重试增加延迟时间
-                    delay = initial_delay * (2 ** (attempt - 1))  # 指数退避
-                    logger.debug(f"【飞牛影视调度器】第{attempt + 1}次重试，等待{delay:.1f}秒...")
-                    time.sleep(delay)
-
-                # 检查文件是否有更新
-                current_file_size = Path(self._log_file_path).stat().st_size
-                if attempt == 0:
-                    self._last_file_size = current_file_size
-                elif current_file_size == self._last_file_size:
-                    logger.debug(f"【飞牛影视调度器】文件大小未变化，可能尚未写入新日志")
-
-                signature = self._search_signature_in_log()
-                if signature:
-                    logger.debug(f"【飞牛影视调度器】✅ 第{attempt + 1}次尝试成功找到期望签名：{signature}")
-                    return signature
-                else:
-                    logger.debug(f"【飞牛影视调度器】第{attempt + 1}次尝试未找到期望签名")
-
-            logger.debug(f"【飞牛影视调度器】在日志文件中未找到期望签名（已重试{max_retries}次）")
-            return None
-
-        except Exception as e:
-            logger.error(f"【飞牛影视调度器】解析日志文件时发生错误：{e}")
-            return None
-
-    def _search_signature_in_log(self, lines_to_check: int = 200) -> Optional[str]:
-        """在日志文件中搜索期望签名"""
-        try:
-            # 读取日志文件的最后几行（从最新的开始）
-            with open(self._log_file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-
-            # 从后往前查找包含expectSign的行
-            for line in reversed(lines[-lines_to_check:]):
-                if 'expectSign:' in line:
-                    # 使用正则表达式提取期望签名
-                    match = re.search(r'expectSign:([a-f0-9]{32})', line)
-                    if match:
-                        return match.group(1)
-
-            return None
-        except Exception as e:
-            logger.debug(f"【飞牛影视调度器】搜索签名时出错：{e}")
-            return None
-
-    def get_latest_log_timestamp(self) -> Optional[float]:
-        """获取日志文件中最新条目的时间戳"""
-        try:
-            if not Path(self._log_file_path).exists():
-                return None
-
-            with open(self._log_file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-
-            if not lines:
-                return None
-
-            # 检查最后几行的时间戳
-            for line in reversed(lines[-10:]):
-                # 尝试解析时间戳
-                import re
-                time_match = re.search(r'time="([^"]+)"', line)
-                if time_match:
-                    from datetime import datetime
-                    try:
-                        # 解析时间戳字符串
-                        time_str = time_match.group(1)
-                        # 移除时区信息进行解析
-                        time_str_clean = time_str.split('+')[0]
-                        dt = datetime.strptime(time_str_clean, "%Y-%m-%dT%H:%M:%S")
-                        return dt.timestamp()
-                    except:
-                        continue
-
-            return None
-        except Exception as e:
-            logger.debug(f"【飞牛影视调度器】获取日志时间戳失败：{e}")
-            return None
-
-    def wait_for_log_update(self, timeout: float = 10.0) -> bool:
-        """等待日志文件更新"""
-        try:
-            start_time = time.time()
-            initial_size = Path(self._log_file_path).stat().st_size if Path(self._log_file_path).exists() else 0
-
-            while time.time() - start_time < timeout:
-                current_size = Path(self._log_file_path).stat().st_size if Path(self._log_file_path).exists() else 0
-                if current_size > initial_size:
-                    logger.debug(f"【飞牛影视调度器】检测到日志文件更新（{initial_size} -> {current_size} 字节）")
-                    return True
-                time.sleep(0.5)
-
-            logger.debug(f"【飞牛影视调度器】等待{timeout}秒后日志文件未更新")
-            return False
-        except Exception as e:
-            logger.debug(f"【飞牛影视调度器】等待日志更新时出错：{e}")
-            return False
