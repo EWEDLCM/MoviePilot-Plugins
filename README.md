@@ -11,7 +11,7 @@
 | [代理地址测试](./plugins.v2/proxytest/README.md) | 测试容器内的HTTP代理设置，并尝试使用代理连接外网 | 1.1.1 |
 | [插件代理控制器](./plugins.v2/proxycontroller/README.md) |用于控制其他插件是否使用 PROXY_HOST 代理 | 1.6.2 |
 | [邮件集](./plugins.v2/yjj/README.md) |实时监控邮箱，支持验证码AI识别和关键词过滤，按需推送重要邮件| 1.1.8 |
-| [飞牛影视调度器](./plugins.v2/fnmvscheduler/README.md) |智能调度飞牛媒体服务器的媒体库扫描| 2.2.0 |
+| [飞牛影视调度器](./plugins.v2/fnmvscheduler/README.md) |智能调度飞牛媒体服务器的媒体库扫描| 2.2.2 |
 | [CFW设备在线汇报](./plugins.v2/cfworkerheartbeat/README.md) |配合Cloudflare Worker 或服务器，汇报设备在线状态，实现设备离线通知| 1.0.3 |
 ## 安装插件
 
